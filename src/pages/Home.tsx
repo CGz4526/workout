@@ -50,7 +50,7 @@ export default function Home() {
     }
 
     await db.sessions.add(session)
-    navigate(`/workout/${session.id}`)
+    navigate(`/session/${session.id}`)
   }
 
   const clearAllSessions = async () => {
@@ -91,7 +91,7 @@ export default function Home() {
         {/* Continue active workout */}
         {activeSession && (
           <button
-            onClick={() => navigate(`/workout/${activeSession.id}`)}
+            onClick={() => navigate(`/session/${activeSession.id}`)}
             className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-4 bg-gradient-to-r from-amber-600 to-orange-500 active:from-amber-700 active:to-orange-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-amber-500/20 animate-fade-in"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-active:translate-x-[100%] transition-transform duration-700" />
@@ -160,7 +160,7 @@ export default function Home() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => navigate(`/workout/${s.id}`)}
+                    onClick={() => navigate(`/session/${s.id}`)}
                     className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all duration-200"
                   >
                     <div className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">

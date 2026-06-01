@@ -8,7 +8,7 @@ import BottomNav from './components/BottomNav'
 
 function AppLayout() {
   const location = useLocation()
-  const isWorkout = location.pathname.startsWith('/workout/')
+  const isWorkout = location.pathname.startsWith('/session/')
 
   return (
     <div className="min-h-screen bg-zinc-950">
@@ -16,7 +16,7 @@ function AppLayout() {
         <Route path="/" element={<Home />} />
         <Route path="/exercises" element={<Exercises />} />
         <Route path="/templates" element={<Templates />} />
-        <Route path="/workout/:sessionId" element={<ActiveWorkout />} />
+        <Route path="/session/:sessionId" element={<ActiveWorkout />} />
         <Route path="/history" element={<History />} />
       </Routes>
       {!isWorkout && <BottomNav />}
@@ -26,7 +26,7 @@ function AppLayout() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/workout">
       <AppLayout />
     </BrowserRouter>
   )
