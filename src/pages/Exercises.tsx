@@ -21,8 +21,10 @@ export default function Exercises() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
 
-  const exercises =
-    useLiveQuery(() => db.exercises.where('bodyPart').equals(activeTab).toArray()) ?? []
+  const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
+  const exercises = allExercises
+    .filter((e) => e.bodyPart === activeTab)
+    .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
 
   const handleSave = async () => {
     if (!formName.trim()) return
@@ -33,6 +35,7 @@ export default function Exercises() {
         id: crypto.randomUUID(),
         name: formName.trim(),
         bodyPart: activeTab,
+        createdAt: Date.now(),
       })
     }
     setFormName('')

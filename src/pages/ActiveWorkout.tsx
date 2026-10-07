@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus, Minus, Timer, Trophy, Clock, Dumbbell, ListChecks, Zap } from 'lucide-react'
+import { Plus, Minus, Timer, Trophy, Clock, Dumbbell, ListChecks, Zap, Route, X, Check } from 'lucide-react'
 import { db } from '../db'
-import type { ExerciseRecord } from '../types'
+import { BODY_PARTS, type BodyPart, type ExerciseRecord } from '../types'
 import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
 
@@ -20,8 +20,11 @@ export default function ActiveWorkout() {
   const [finalElapsed, setFinalElapsed] = useState(0)
   const timerRef = useRef<number | null>(null)
 
-  const [restRemaining, setRestRemaining] = useState(0)
+  const [restEndTime, setRestEndTime] = useState<number | null>(null)
+  const [distance, setDistance] = useState<string>('')
+  const [loaded, setLoaded] = useState(false)
   const restTimerRef = useRef<number | null>(null)
+  const initializedForRef = useRef<string | null>(null)
 
   // Calculate elapsed from startTime
   const elapsed = finished
@@ -29,6 +32,9 @@ export default function ActiveWorkout() {
     : session?.startTime
       ? Math.floor((Date.now() - session.startTime) / 1000)
       : 0
+
+  // Calculate rest remaining from end time
+  const restRemaining = restEndTime ? Math.max(0, Math.ceil((restEndTime - Date.now()) / 1000)) : 0
 
   // Debounced save exercises to DB
   const saveTimeoutRef = useRef<number | null>(null)
@@ -43,44 +49,71 @@ export default function ActiveWorkout() {
     }, 300)
   }, [sessionId])
 
-  // Init from session
+  // Init from session (runs once per session)
   useEffect(() => {
-    if (!session) return
+    if (!session || initializedForRef.current === sessionId) return
+    initializedForRef.current = sessionId ?? null
 
     if (session.finished) {
       setExercises(session.exercises)
       setFinalElapsed(session.duration)
       setFinished(true)
       setShowSummary(true)
+      setLoaded(true)
       return
     }
 
-    if (exercises.length === 0) {
-      if (session.exercises.length > 0) {
-        setExercises(session.exercises)
+    if (session.exercises.length > 0) {
+      setExercises(session.exercises)
+      setLoaded(true)
+    } else {
+      // Prefer the preset prepared right before starting (it reflects any
+      // last-minute edits made on the template / pre-workout screens),
+      // otherwise fall back to the saved template.
+      const presetKey = `preset-${sessionId}`
+      const presetData = sessionStorage.getItem(presetKey)
+      if (presetData) {
+        const presetItems = JSON.parse(presetData) as { exerciseId: string; exerciseName: string; defaultSets: number; defaultReps: number }[]
+        setExercises(
+          presetItems.map((item) => ({
+            exerciseId: item.exerciseId,
+            exerciseName: item.exerciseName,
+            sets: Array.from({ length: item.defaultSets }, () => ({
+              weight: undefined as number | undefined,
+              reps: item.defaultReps,
+              completed: false,
+            })),
+          }))
+        )
+        sessionStorage.removeItem(presetKey)
+        setLoaded(true)
       } else if (session.templateId) {
         db.templates.get(session.templateId).then((template) => {
           if (template && template.items.length > 0) {
-            const resolved: ExerciseRecord[] = template.items.map((item) => ({
-              exerciseId: item.exerciseId,
-              exerciseName: item.exerciseName,
-              sets: Array.from({ length: item.defaultSets }, () => ({
-                weight: undefined as number | undefined,
-                reps: item.defaultReps,
-                completed: false,
-              })),
-            }))
-            setExercises(resolved)
+            setExercises(
+              template.items.map((item) => ({
+                exerciseId: item.exerciseId,
+                exerciseName: item.exerciseName,
+                sets: Array.from({ length: item.defaultSets }, () => ({
+                  weight: undefined as number | undefined,
+                  reps: item.defaultReps,
+                  completed: false,
+                })),
+              }))
+            )
           }
+          setLoaded(true)
         })
-      }
-
-      // Restore rest timer
-      if (session.restEndTime && session.restEndTime > Date.now()) {
-        setRestRemaining(Math.ceil((session.restEndTime - Date.now()) / 1000))
+      } else {
+        setLoaded(true)
       }
     }
-  }, [session])
+
+    // Restore an in-progress rest timer
+    if (session.restEndTime && session.restEndTime > Date.now()) {
+      setRestEndTime(session.restEndTime)
+    }
+  }, [session, sessionId])
 
   // Display tick: re-render every second so elapsed updates
   useEffect(() => {
@@ -93,29 +126,26 @@ export default function ActiveWorkout() {
     }
   }, [finished])
 
-  // Rest timer
+  // Rest timer - just trigger re-renders, actual calculation is done above
   useEffect(() => {
-    if (restRemaining <= 0) return
+    if (!restEndTime || restRemaining <= 0) return
     restTimerRef.current = window.setInterval(() => {
-      setRestRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(restTimerRef.current!)
-          return 0
-        }
-        return prev - 1
-      })
+      setDisplayTick((t) => t + 1) // trigger re-render to recalculate
+      if (Date.now() >= restEndTime) {
+        setRestEndTime(null)
+        if (restTimerRef.current) clearInterval(restTimerRef.current)
+      }
     }, 1000)
     return () => {
       if (restTimerRef.current) clearInterval(restTimerRef.current)
     }
-  }, [restRemaining > 0])
+  }, [restEndTime])
 
-  // Save exercises to DB when they change
+  // Persist exercises + rest timer state whenever either changes
   useEffect(() => {
-    if (exercises.length > 0 && !finished) {
-      saveExercises(exercises)
-    }
-  }, [exercises])
+    if (finished || exercises.length === 0) return
+    saveExercises(exercises, restEndTime ?? undefined)
+  }, [exercises, restEndTime, finished, saveExercises])
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
@@ -132,23 +162,16 @@ export default function ActiveWorkout() {
   }
 
   const startRest = () => {
-    const end = Date.now() + REST_SECONDS * 1000
-    setRestRemaining(REST_SECONDS)
-    saveExercises(exercises, end)
+    setRestEndTime(Date.now() + REST_SECONDS * 1000)
   }
 
   const skipRest = () => {
-    setRestRemaining(0)
+    setRestEndTime(null)
     if (restTimerRef.current) clearInterval(restTimerRef.current)
-    saveExercises(exercises, undefined)
   }
 
   const addRestTime = (seconds: number) => {
-    setRestRemaining((prev) => {
-      const newRemaining = prev + seconds
-      saveExercises(exercises, Date.now() + newRemaining * 1000)
-      return newRemaining
-    })
+    setRestEndTime((prev) => (prev ?? Date.now()) + seconds * 1000)
   }
 
   const toggleSet = (exIdx: number, setIdx: number) => {
@@ -189,16 +212,51 @@ export default function ActiveWorkout() {
     ))
   }
 
-  const addExercise = async () => {
+  const removeExercise = (exIdx: number) => {
     if (finished) return
-    const allExercises = await db.exercises.toArray()
-    const name = prompt('输入动作名称（从动作库选择或自由输入）:')
-    if (!name) return
-    const matched = allExercises.find((e) => e.name === name)
+    setExercises(exercises.filter((_, i) => i !== exIdx))
+  }
+
+  const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
+  const [selectingExercise, setSelectingExercise] = useState(false)
+  const [selectTab, setSelectTab] = useState<BodyPart>('肩')
+  const [customName, setCustomName] = useState('')
+
+  const filteredExercises = allExercises.filter((e) => e.bodyPart === selectTab)
+
+  const addExerciseFromLib = (exerciseId: string, exerciseName: string) => {
+    if (finished) return
     setExercises([
       ...exercises,
-      { exerciseId: matched?.id ?? crypto.randomUUID(), exerciseName: name, sets: [{ weight: undefined, reps: 12, completed: false }] },
+      { exerciseId, exerciseName, sets: [{ weight: undefined, reps: 12, completed: false }] },
     ])
+    setSelectingExercise(false)
+  }
+
+  const addCustomExercise = async () => {
+    if (finished) return
+    const n = customName.trim()
+    if (!n) return
+
+    // Save to exercises library
+    const id = crypto.randomUUID()
+    const existing = await db.exercises.toArray()
+    const nameExists = existing.find((e) => e.name === n && e.bodyPart === selectTab)
+    if (!nameExists) {
+      await db.exercises.add({
+        id,
+        name: n,
+        bodyPart: selectTab,
+        createdAt: Date.now(),
+      })
+    }
+
+    setExercises([
+      ...exercises,
+      { exerciseId: nameExists?.id ?? id, exerciseName: n, sets: [{ weight: undefined, reps: 12, completed: false }] },
+    ])
+    setCustomName('')
+    setSelectingExercise(false)
   }
 
   const finishWorkout = async () => {
@@ -214,26 +272,27 @@ export default function ActiveWorkout() {
       duration,
       finished: true,
       restEndTime: undefined,
+      distance: distance ? Number(distance) : undefined,
     })
     setFinished(true)
     setShowSummary(true)
   }
 
-  if (!session) {
+  if (!session || !loaded) {
     return (
-      <div className="min-h-screen bg-surface-0 flex items-center justify-center">
+      <div className="min-h-screen bg-surface-0 flex flex-col items-center justify-center gap-4">
         <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        <button
+          onClick={() => navigate('/')}
+          className="text-secondary text-sm active:text-primary transition-colors"
+        >
+          返回首页
+        </button>
       </div>
     )
   }
 
-  if (exercises.length === 0 && !showSummary && !session.finished) {
-    return (
-      <div className="min-h-screen bg-surface-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-      </div>
-    )
-  }
+  const isAerobic = session.aerobic === true
 
   const totalSets = exercises.reduce((sum, ex) => sum + ex.sets.length, 0)
   const completedSets = exercises.reduce((sum, ex) => sum + ex.sets.filter((s) => s.completed).length, 0)
@@ -254,7 +313,7 @@ export default function ActiveWorkout() {
           <h2 className="text-2xl font-bold text-primary mb-1 animate-fade-in">训练完成</h2>
           <p className="text-secondary text-sm mb-8 animate-fade-in">继续保持，你很棒</p>
 
-          <div className="w-full grid grid-cols-3 gap-3 mb-8 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+          <div className={`w-full gap-3 mb-8 animate-fade-in ${isAerobic ? 'grid grid-cols-2 max-w-sm' : 'grid grid-cols-3'}`} style={{ animationDelay: '0.1s' }}>
             <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
               <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                 <Clock size={18} className="text-accent-light" />
@@ -262,47 +321,78 @@ export default function ActiveWorkout() {
               <p className="text-primary text-lg font-bold font-mono">{formatTime(elapsed)}</p>
               <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">时长</p>
             </div>
-            <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
-              <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
-                <Dumbbell size={18} className="text-accent-light" />
+            {isAerobic ? (
+              <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+                <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
+                  <Route size={18} className="text-accent-light" />
+                </div>
+                <div className="flex items-center justify-center gap-1">
+                  <input
+                    type="number"
+                    value={distance}
+                    onChange={(e) => setDistance(e.target.value)}
+                    onBlur={async () => {
+                      if (sessionId) {
+                        await db.sessions.update(sessionId, {
+                          distance: distance ? Number(distance) : undefined,
+                        })
+                      }
+                    }}
+                    placeholder="0"
+                    step="0.1"
+                    className="w-16 bg-surface-2 text-primary text-center py-1 rounded-lg text-lg font-bold outline-none border border-border font-mono placeholder:text-muted"
+                  />
+                  <span className="text-muted text-xs">km</span>
+                </div>
+                <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">距离</p>
               </div>
-              <p className="text-primary text-lg font-bold">{completedExercises.length}</p>
-              <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">动作</p>
-            </div>
-            <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
-              <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
-                <ListChecks size={18} className="text-accent-light" />
-              </div>
-              <p className="text-primary text-lg font-bold">{completedSets}</p>
-              <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">组数</p>
-            </div>
+            ) : (
+              <>
+                <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+                  <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
+                    <Dumbbell size={18} className="text-accent-light" />
+                  </div>
+                  <p className="text-primary text-lg font-bold">{completedExercises.length}</p>
+                  <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">动作</p>
+                </div>
+                <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+                  <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
+                    <ListChecks size={18} className="text-accent-light" />
+                  </div>
+                  <p className="text-primary text-lg font-bold">{completedSets}</p>
+                  <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">组数</p>
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="w-full space-y-3 mb-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
-            {exercises.filter(ex => ex.sets.some(s => s.completed)).map((ex, idx) => {
-              const doneSets = ex.sets.filter(s => s.completed)
-              return (
-                <div key={idx} className="bg-surface-1 rounded-2xl p-4 border border-border">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
-                        <span className="text-xs font-bold text-accent-light">{idx + 1}</span>
+          {!isAerobic && (
+            <div className="w-full space-y-3 mb-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
+              {exercises.filter(ex => ex.sets.some(s => s.completed)).map((ex, idx) => {
+                const doneSets = ex.sets.filter(s => s.completed)
+                return (
+                  <div key={idx} className="bg-surface-1 rounded-2xl p-4 border border-border">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+                          <span className="text-xs font-bold text-accent-light">{idx + 1}</span>
+                        </div>
+                        <span className="text-primary font-semibold text-sm">{ex.exerciseName}</span>
                       </div>
-                      <span className="text-primary font-semibold text-sm">{ex.exerciseName}</span>
+                      <span className="text-accent-light text-xs font-mono font-bold">{doneSets.length} 组</span>
                     </div>
-                    <span className="text-accent-light text-xs font-mono font-bold">{doneSets.length} 组</span>
+                    <div className="flex flex-wrap gap-1.5 ml-9">
+                      {doneSets.map((s, i) => (
+                        <span key={i} className="text-[11px] bg-surface-2 text-primary px-2.5 py-1 rounded-lg font-mono border border-border">
+                          {s.weight ? `${s.weight}kg` : '-'} × {s.reps ?? '-'}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 ml-9">
-                    {doneSets.map((s, i) => (
-                      <span key={i} className="text-[11px] bg-surface-2 text-primary px-2.5 py-1 rounded-lg font-mono border border-border">
-                        {s.weight ? `${s.weight}kg` : '-'} × {s.reps ?? '-'}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
 
           <button
             onClick={() => navigate('/')}
@@ -328,103 +418,146 @@ export default function ActiveWorkout() {
         }
       />
 
-      <div className="px-4 py-3.5 border-b border-border">
-        <div className="flex items-center justify-between text-xs mb-2.5">
-          <span className="text-secondary font-mono">{completedSets}/{totalSets} 组</span>
-          <span className="text-secondary">
-            {exercises.filter((ex) => ex.sets.every((s) => s.completed)).length}/{exercises.length} 完成
-          </span>
+      {!isAerobic && (
+        <div className="px-4 py-3.5 border-b border-border">
+          <div className="flex items-center justify-between text-xs mb-2.5">
+            <span className="text-secondary font-mono">{completedSets}/{totalSets} 组</span>
+            <span className="text-secondary">
+              {exercises.filter((ex) => ex.sets.every((s) => s.completed)).length}/{exercises.length} 完成
+            </span>
+          </div>
+          <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
         </div>
-        <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
+      )}
 
-      <div className="px-4 py-4 space-y-5">
-        {exercises.map((ex, exIdx) => {
-          const allDone = ex.sets.every((s) => s.completed)
-          return (
-            <div key={exIdx} className={`bg-surface-1 rounded-2xl p-4 border transition-colors duration-300 ${allDone ? 'border-accent/20' : 'border-border'}`}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-300 ${allDone ? 'bg-accent/20' : 'bg-surface-2'}`}>
-                    <span className={`text-xs font-bold ${allDone ? 'text-accent-light' : 'text-secondary'}`}>{exIdx + 1}</span>
+      {isAerobic ? (
+        <div className="flex-1 flex flex-col items-center justify-center px-4 py-20">
+          <div className="relative w-48 h-48 mb-8">
+            <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="43" fill="none" stroke="var(--color-surface-2)" strokeWidth="5" />
+              <circle
+                cx="50" cy="50" r="43" fill="none"
+                stroke="url(#timerGradient)"
+                strokeWidth="5"
+                strokeLinecap="round"
+                strokeDasharray={`${2 * Math.PI * 43}`}
+                strokeDashoffset="0"
+                className="transition-all duration-1000 ease-linear"
+              />
+              <defs>
+                <linearGradient id="timerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#10b981" />
+                  <stop offset="100%" stopColor="#34d399" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <p className="text-primary text-4xl font-bold font-mono tracking-tight">
+                {formatTime(elapsed)}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 py-4 space-y-5">
+          {exercises.map((ex, exIdx) => {
+            const allDone = ex.sets.every((s) => s.completed)
+            return (
+              <div key={exIdx} className={`bg-surface-1 rounded-2xl p-4 border transition-colors duration-300 ${allDone ? 'border-accent/20' : 'border-border'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-300 ${allDone ? 'bg-accent/20' : 'bg-surface-2'}`}>
+                      <span className={`text-xs font-bold ${allDone ? 'text-accent-light' : 'text-secondary'}`}>{exIdx + 1}</span>
+                    </div>
+                    <div>
+                      <h3 className={`font-semibold text-sm transition-colors duration-300 ${allDone ? 'text-accent-light' : 'text-primary'}`}>
+                        {ex.exerciseName}
+                      </h3>
+                      <p className="text-muted text-[10px] mt-0.5">
+                        {ex.sets.filter(s => s.completed).length}/{ex.sets.length} 组
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className={`font-semibold text-sm transition-colors duration-300 ${allDone ? 'text-accent-light' : 'text-primary'}`}>
-                      {ex.exerciseName}
-                    </h3>
-                    <p className="text-muted text-[10px] mt-0.5">
-                      {ex.sets.filter(s => s.completed).length}/{ex.sets.length} 组
-                    </p>
-                  </div>
+                  {!finished && (
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => removeSet(exIdx)} className="p-1.5 rounded-lg text-muted active:bg-surface-2 transition-colors">
+                        <Minus size={14} />
+                      </button>
+                      <button onClick={() => addSet(exIdx)} className="p-1.5 rounded-lg text-muted active:bg-surface-2 transition-colors">
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {!finished && (
-                  <div className="flex items-center gap-0.5">
-                    <button onClick={() => removeSet(exIdx)} className="p-1.5 rounded-lg text-muted active:bg-surface-2 transition-colors">
-                      <Minus size={14} />
-                    </button>
-                    <button onClick={() => addSet(exIdx)} className="p-1.5 rounded-lg text-muted active:bg-surface-2 transition-colors">
-                      <Plus size={14} />
-                    </button>
+
+                <div className="grid grid-cols-[1.75rem_1fr_1fr_auto] gap-1 items-center text-[10px] text-muted mb-1.5 px-0.5 uppercase tracking-wider">
+                  <span>组</span>
+                  <span>重量</span>
+                  <span>次数</span>
+                  <span />
+                </div>
+
+                {ex.sets.map((set, setIdx) => (
+                  <div
+                    key={setIdx}
+                    className={`grid grid-cols-[1.75rem_1fr_1fr_auto] gap-1 items-center py-2 px-0.5 rounded-xl transition-colors duration-200 ${
+                      set.completed ? 'bg-accent/[0.06]' : ''
+                    }`}
+                  >
+                    <span className={`text-xs font-mono ${set.completed ? 'text-accent-light font-bold' : 'text-muted'}`}>
+                      {setIdx + 1}
+                    </span>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={set.weight ?? ''}
+                        onChange={(e) => updateSet(exIdx, setIdx, 'weight', e.target.value ? Number(e.target.value) : undefined)}
+                        placeholder="-"
+                        disabled={finished}
+                        className="bg-surface-2 text-primary text-center py-2 pr-7 rounded-lg text-sm outline-none border border-border focus:border-accent/40 transition-colors disabled:opacity-40 font-mono placeholder:text-muted min-w-0 w-full"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none">kg</span>
+                    </div>
+                    <input
+                      type="number"
+                      value={set.reps ?? ''}
+                      onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value ? Number(e.target.value) : undefined)}
+                      placeholder="-"
+                      disabled={finished}
+                      className="bg-surface-2 text-primary text-center py-2 rounded-lg text-sm outline-none border border-border focus:border-accent/40 transition-colors disabled:opacity-40 font-mono placeholder:text-muted min-w-0"
+                    />
+                    <div className="flex justify-center">
+                      <CheckButton checked={set.completed} onClick={() => toggleSet(exIdx, setIdx)} />
+                    </div>
                   </div>
+                ))}
+                {!finished && (
+                  <button
+                    onClick={() => removeExercise(exIdx)}
+                    className="text-red-400/60 text-[10px] mt-2 px-2 py-1 rounded-lg active:bg-red-500/10 transition-colors"
+                  >
+                    删除这个动作
+                  </button>
                 )}
               </div>
+            )
+          })}
 
-              <div className="grid grid-cols-[2.5rem_1fr_1fr_2.5rem] gap-2 items-center text-[10px] text-muted mb-1.5 px-1 uppercase tracking-wider">
-                <span>组</span>
-                <span>重量</span>
-                <span>次数</span>
-                <span />
-              </div>
-
-              {ex.sets.map((set, setIdx) => (
-                <div
-                  key={setIdx}
-                  className={`grid grid-cols-[2.5rem_1fr_1fr_2.5rem] gap-2 items-center py-2 px-1 rounded-xl transition-colors duration-200 ${
-                    set.completed ? 'bg-accent/[0.06]' : ''
-                  }`}
-                >
-                  <span className={`text-xs font-mono ${set.completed ? 'text-accent-light font-bold' : 'text-muted'}`}>
-                    {setIdx + 1}
-                  </span>
-                  <input
-                    type="number"
-                    value={set.weight ?? ''}
-                    onChange={(e) => updateSet(exIdx, setIdx, 'weight', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="-"
-                    disabled={finished}
-                    className="bg-surface-2 text-primary text-center py-2 rounded-lg text-sm outline-none border border-border focus:border-accent/40 transition-colors disabled:opacity-40 font-mono placeholder:text-muted"
-                  />
-                  <input
-                    type="number"
-                    value={set.reps ?? ''}
-                    onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value ? Number(e.target.value) : undefined)}
-                    placeholder="-"
-                    disabled={finished}
-                    className="bg-surface-2 text-primary text-center py-2 rounded-lg text-sm outline-none border border-border focus:border-accent/40 transition-colors disabled:opacity-40 font-mono placeholder:text-muted"
-                  />
-                  <div className="flex justify-center">
-                    <CheckButton checked={set.completed} onClick={() => toggleSet(exIdx, setIdx)} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
-        })}
-
-        {!finished && (
-          <button
-            onClick={addExercise}
-            className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors"
-          >
-            + 添加动作
-          </button>
-        )}
-      </div>
+          {!finished && (
+            <button
+              onClick={() => setSelectingExercise(true)}
+              className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors"
+            >
+              + 添加动作
+            </button>
+          )}
+        </div>
+      )}
 
       {restRemaining > 0 && !finished && (
         <div className="fixed inset-0 z-50 bg-surface-0/95 backdrop-blur-xl flex flex-col items-center justify-center animate-fade-in">
@@ -456,16 +589,16 @@ export default function ActiveWorkout() {
             </div>
           </div>
 
-          <div className="flex gap-2.5 mb-8">
+          <div className="flex gap-2.5 mb-8 px-4">
             <button
               onClick={() => addRestTime(30)}
-              className="px-5 py-2.5 bg-surface-1 text-primary rounded-xl text-sm font-medium border border-border active:bg-surface-2 transition-colors"
+              className="px-4 py-2.5 bg-surface-1 text-primary rounded-xl text-sm font-medium border border-border active:bg-surface-2 transition-colors"
             >
               +30秒
             </button>
             <button
               onClick={() => addRestTime(60)}
-              className="px-5 py-2.5 bg-surface-1 text-primary rounded-xl text-sm font-medium border border-border active:bg-surface-2 transition-colors"
+              className="px-4 py-2.5 bg-surface-1 text-primary rounded-xl text-sm font-medium border border-border active:bg-surface-2 transition-colors"
             >
               +1分钟
             </button>
@@ -477,6 +610,70 @@ export default function ActiveWorkout() {
           >
             跳过休息
           </button>
+
+          <button
+            onClick={finishWorkout}
+            className="mt-4 text-muted text-xs active:text-secondary transition-colors"
+          >
+            结束训练
+          </button>
+        </div>
+      )}
+
+      {selectingExercise && (
+        <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-scale-in">
+          <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
+            <h3 className="text-primary font-semibold">选择动作</h3>
+            <button onClick={() => { setSelectingExercise(false); setCustomName('') }} className="p-1.5 rounded-lg active:bg-surface-2">
+              <X size={22} className="text-secondary" />
+            </button>
+          </div>
+
+          <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <input
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addCustomExercise()}
+                placeholder="输入自定义动作名称"
+                className="flex-1 bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted"
+              />
+              <button
+                onClick={addCustomExercise}
+                disabled={!customName.trim()}
+                className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center active:bg-accent/20 disabled:opacity-30"
+              >
+                <Check size={18} className="text-accent-light" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex overflow-x-auto gap-2 px-4 py-3 border-b border-border no-scrollbar">
+            {BODY_PARTS.map((bp) => (
+              <button
+                key={bp}
+                onClick={() => setSelectTab(bp)}
+                className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  selectTab === bp
+                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                    : 'bg-surface-1 text-secondary border border-border'
+                }`}
+              >
+                {bp}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {filteredExercises.map((ex) => (
+              <button
+                key={ex.id}
+                onClick={() => addExerciseFromLib(ex.id, ex.name)}
+                className="w-full text-left p-4 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border transition-all"
+              >
+                <span className="text-primary text-sm font-medium">{ex.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

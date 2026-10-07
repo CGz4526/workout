@@ -1,21 +1,143 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { ChevronDown, ChevronUp, Clock, Trash2, Calendar } from 'lucide-react'
+import { Clock, ChevronRight, Calendar, Image, Trash2, Plus, Database, Play, Coffee } from 'lucide-react'
 import { db } from '../db'
 import Header from '../components/Header'
 
+function SwipeableItem({ onDelete, onContinue, onClick, children }: { onDelete: () => void; onContinue?: () => void; onClick: () => void; children: React.ReactNode }) {
+  const [offsetLeft, setOffsetLeft] = useState(0)
+  const startX = useRef(0)
+  const swiping = useRef(false)
+  const btnWidth = 80
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX
+    swiping.current = true
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!swiping.current) return
+    const diff = startX.current - e.touches[0].clientX
+    if (diff > 0) {
+      // swipe left: card shifts left, shows delete on right
+      setOffsetLeft(-Math.min(diff, btnWidth))
+    } else if (diff < 0) {
+      // swipe right: card shifts right, shows continue on left
+      setOffsetLeft(Math.min(-diff, btnWidth))
+    } else {
+      setOffsetLeft(0)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    swiping.current = false
+    if (Math.abs(offsetLeft) > btnWidth / 2) {
+      setOffsetLeft(offsetLeft > 0 ? btnWidth : -btnWidth)
+    } else {
+      setOffsetLeft(0)
+    }
+  }
+
+  const handleClick = () => {
+    if (offsetLeft === 0) {
+      onClick()
+    } else {
+      setOffsetLeft(0)
+    }
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl">
+      {/* Continue button (left) */}
+      {onContinue && (
+        <div className="absolute left-0 top-0 bottom-0 w-20">
+          <button
+            onClick={(e) => { e.stopPropagation(); onContinue() }}
+            className="w-full h-full bg-emerald-500 flex items-center justify-center active:bg-emerald-600 transition-colors rounded-l-2xl"
+          >
+            <Play size={20} className="text-white" />
+          </button>
+        </div>
+      )}
+
+      {/* Delete button (right) */}
+      <div className="absolute right-0 top-0 bottom-0 w-20">
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="w-full h-full bg-red-500 flex items-center justify-center active:bg-red-600 transition-colors rounded-r-2xl"
+        >
+          <Trash2 size={20} className="text-white" />
+        </button>
+      </div>
+
+      {/* Main content */}
+      <div
+        className="relative bg-surface-1 border border-border transition-transform"
+        style={{ transform: `translateX(${offsetLeft}px)` }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={handleClick}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export default function History() {
+  const navigate = useNavigate()
   const sessions =
     useLiveQuery(() =>
       db.sessions.orderBy('date').reverse().toArray().then(
         (all) => all.filter((s) => s.finished)
       )
     ) ?? []
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
+
+  const getBodyParts = (s: typeof sessions[0]) => {
+    if (s.aerobic) return null
+    const parts = new Set<string>()
+
+    // Keyword-based extra body parts for multi-joint exercises
+    const extraParts: Record<string, string[]> = {
+      '飞鸟': ['肩'],
+      '双杠臂屈伸': ['三头', '肩'],
+      '窄推': ['胸'],
+      '硬拉': ['背'],
+      '引体向上': ['二头'],
+    }
+
+    for (const ex of s.exercises) {
+      const def = allExercises.find((e) => e.id === ex.exerciseId)
+      if (def) {
+        parts.add(def.bodyPart)
+      } else if (ex.exerciseName) {
+        const byName = allExercises.find((e) => e.name === ex.exerciseName)
+        if (byName) {
+          parts.add(byName.bodyPart)
+        } else {
+          const byPartial = allExercises.find((e) => e.name.includes(ex.exerciseName) || ex.exerciseName.includes(e.name))
+          if (byPartial) parts.add(byPartial.bodyPart)
+        }
+      }
+
+      // Check extra parts from keywords
+      for (const [keyword, exParts] of Object.entries(extraParts)) {
+        if (ex.exerciseName.includes(keyword)) {
+          exParts.forEach(p => parts.add(p))
+        }
+      }
+    }
+    return parts.size > 0 ? [...parts] : null
+  }
 
   const formatDuration = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
     const s = seconds % 60
+    if (h > 0) return `${h}时${m}分${s > 0 ? s + '秒' : ''}`
     if (m === 0) return `${s}秒`
     return `${m}分${s > 0 ? s + '秒' : ''}`
   }
@@ -23,6 +145,22 @@ export default function History() {
   const handleDelete = async (id: string) => {
     if (confirm('确定删除这条训练记录？')) {
       await db.sessions.delete(id)
+    }
+  }
+
+  const handleContinue = async (id: string) => {
+    const existing = await db.sessions.filter((s) => !s.finished).first()
+    if (existing) {
+      alert('已有进行中的训练，请先结束当前训练')
+      return
+    }
+    const session = await db.sessions.get(id)
+    if (session) {
+      await db.sessions.update(id, {
+        finished: false,
+        startTime: Date.now() - session.duration * 1000,
+      })
+      navigate(`/session/${id}`)
     }
   }
 
@@ -37,9 +175,36 @@ export default function History() {
     grouped[dateKey].push(s)
   }
 
+  // Within the same day, list strength sessions above aerobic ones
+  // (rest days count as non-aerobic). Array.sort is stable, so sessions
+  // of the same type keep their original time order.
+  for (const key of Object.keys(grouped)) {
+    grouped[key].sort(
+      (a, b) => Number(a.aerobic === true) - Number(b.aerobic === true)
+    )
+  }
+
   return (
     <div className="min-h-screen bg-surface-0 pb-20">
-      <Header title="训练历史" />
+      <Header
+        title="训练历史"
+        rightAction={
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => navigate('/settings')}
+              className="w-8 h-8 rounded-lg bg-surface-1 flex items-center justify-center active:bg-surface-2 transition-colors"
+            >
+              <Database size={16} className="text-secondary" />
+            </button>
+            <button
+              onClick={() => navigate('/add-session')}
+              className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center active:bg-accent/20 transition-colors"
+            >
+              <Plus size={18} className="text-accent-light" />
+            </button>
+          </div>
+        }
+      />
 
       <div className="px-4 py-3">
         {Object.keys(grouped).length === 0 ? (
@@ -59,77 +224,74 @@ export default function History() {
               </div>
               <div className="space-y-2">
                 {items.map((s) => {
-                  const expanded = expandedId === s.id
+                  const isAerobic = s.aerobic === true
+                  const isRest = !isAerobic && s.exercises.length === 0
                   const completedSets = s.exercises.reduce(
                     (sum, ex) => sum + ex.sets.filter((st) => st.completed).length, 0
                   )
+                  const photoCount = s.photos?.length ?? 0
+                  const startTime = new Date(s.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                  const bodyParts = getBodyParts(s)
+                  const cardBg = isRest ? 'bg-stone-500/5' : isAerobic ? 'bg-blue-500/5' : 'border-zinc-700 border'
+                  const iconBg = isRest ? 'bg-stone-400/10' : isAerobic ? 'bg-blue-400/10' : 'bg-accent/10'
+                  const iconColor = isRest ? 'text-stone-400' : isAerobic ? 'text-blue-400' : 'text-accent-light'
                   return (
-                    <div key={s.id} className="bg-surface-1 rounded-2xl overflow-hidden border border-border">
-                      <button
-                        onClick={() => setExpandedId(expanded ? null : s.id)}
-                        className="w-full flex items-center gap-3.5 p-4 active:bg-surface-2 transition-colors"
-                      >
-                        <div className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">
-                          <Clock size={18} className="text-secondary" />
+                    <div className={`rounded-2xl overflow-hidden ${cardBg}`}>
+                    <SwipeableItem
+                      key={s.id}
+                      onDelete={() => handleDelete(s.id)}
+                      onContinue={isRest ? undefined : () => handleContinue(s.id)}
+                      onClick={() => navigate(`/session-detail/${s.id}`)}
+                    >
+                      <div className="flex items-center gap-3.5 p-4">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
+                          {isRest ? <Coffee size={18} className={iconColor} /> : <Clock size={18} className={iconColor} />}
                         </div>
                         <div className="flex-1 text-left min-w-0">
-                          <p className="text-primary font-semibold text-sm">
-                            {s.templateName ?? '自由训练'}
+                          <p className="font-semibold text-sm flex items-center justify-between">
+                            <span className="text-primary">{s.templateName ?? '自由训练'}
+                              {isAerobic && s.duration > 0 && <span className="text-muted text-xs font-normal ml-2">{formatDuration(s.duration)}</span>}
+                              {!isAerobic && !isRest && <span className="text-muted text-xs font-normal ml-2">{startTime} · {formatDuration(s.duration)}</span>}
+                            </span>
+                            {s.weight && <span className="text-muted text-xs font-normal shrink-0 ml-2">体重：{s.weight}kg</span>}
                           </p>
-                          <p className="text-muted text-xs mt-0.5">
-                            {formatDuration(s.duration)} · {s.exercises.length} 动作 · {completedSets} 组
+                          <p className="text-muted text-xs mt-0.5 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                              {isAerobic && s.distance ? (
+                                `${s.distance}km`
+                              ) : !isRest && !isAerobic ? (
+                                <>
+                                  {s.exercises.length} 动作 · {completedSets} 组
+                                  {photoCount > 0 && (
+                                    <span className="inline-flex items-center gap-0.5">
+                                      <Image size={10} />
+                                      {photoCount}
+                                    </span>
+                                  )}
+                                </>
+                              ) : null}
+                              {bodyParts && bodyParts.map((part, idx) => (
+                                <span key={part} className={`text-[10px] px-1.5 py-0.5 rounded-md bg-accent/10 text-accent-light border border-accent/10 shrink-0 ${idx >= 3 ? 'hidden' : ''}`}>{part}</span>
+                              ))}
+                              {bodyParts && bodyParts.length > 3 && (
+                                <span className="text-[10px] text-muted shrink-0">+{bodyParts.length - 3}</span>
+                              )}
+                            </span>
+                            {s.diet && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${
+                                s.diet === 'low' ? 'bg-emerald-500/20 text-emerald-400' :
+                                s.diet === 'mid' ? 'bg-amber-500/20 text-amber-400' :
+                                s.diet === 'high' ? 'bg-orange-600/20 text-orange-500' :
+                                'bg-red-500/20 text-red-400'
+                              }`}>
+                                {s.diet === 'low' ? '低碳' : s.diet === 'mid' ? '中碳' : s.diet === 'high' ? '高碳' : '放纵餐'}
+                              </span>
+                            )}
                           </p>
                         </div>
-                        <div className={`p-1.5 rounded-lg transition-colors ${expanded ? 'bg-surface-2' : ''}`}>
-                          {expanded ? (
-                            <ChevronUp size={16} className="text-secondary" />
-                          ) : (
-                            <ChevronDown size={16} className="text-muted" />
-                          )}
-                        </div>
-                      </button>
-
-                      {expanded && (
-                        <div className="px-4 pb-4 border-t border-border pt-3 animate-fade-in">
-                          {s.exercises.map((ex, exIdx) => (
-                            <div key={exIdx} className="mb-4 last:mb-0">
-                              <p className="text-primary text-sm font-semibold mb-2 flex items-center gap-2">
-                                <span className="w-5 h-5 rounded-md bg-accent/10 flex items-center justify-center">
-                                  <span className="text-[10px] font-bold text-accent-light">{exIdx + 1}</span>
-                                </span>
-                                {ex.exerciseName}
-                              </p>
-                              <div className="ml-7 space-y-1">
-                                {ex.sets.map((set, setIdx) => (
-                                  <div
-                                    key={setIdx}
-                                    className="flex items-center gap-2.5 text-sm"
-                                  >
-                                    <span className="text-muted w-5 text-xs font-mono">{setIdx + 1}</span>
-                                    <span className="text-primary font-mono text-xs">
-                                      {set.weight ? `${set.weight}kg` : '-'}
-                                    </span>
-                                    <span className="text-muted text-xs">×</span>
-                                    <span className="text-primary font-mono text-xs">
-                                      {set.reps ?? '-'}
-                                    </span>
-                                    <span className={`text-[10px] ml-1 ${set.completed ? 'text-accent-light' : 'text-muted'}`}>
-                                      {set.completed ? '✓' : '✗'}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                          <button
-                            onClick={() => handleDelete(s.id)}
-                            className="flex items-center gap-1.5 text-red-400/80 text-xs mt-3 ml-7 py-1.5 px-3 rounded-lg active:bg-red-500/10 transition-colors"
-                          >
-                            <Trash2 size={13} />
-                            删除记录
-                          </button>
-                        </div>
-                      )}
+                        <ChevronRight size={18} className="text-surface-3 shrink-0" />
+                      </div>
+                    </SwipeableItem>
                     </div>
                   )
                 })}

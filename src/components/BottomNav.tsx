@@ -1,10 +1,10 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Home, Dumbbell, ClipboardList, History } from 'lucide-react'
+import { Home, Dumbbell, History, BarChart3 } from 'lucide-react'
 
 const navItems = [
   { path: '/', icon: Home, label: '首页' },
   { path: '/exercises', icon: Dumbbell, label: '动作库' },
-  { path: '/templates', icon: ClipboardList, label: '模板' },
+  { path: '/stats', icon: BarChart3, label: '统计' },
   { path: '/history', icon: History, label: '历史' },
 ]
 

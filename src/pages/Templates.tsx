@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus, Trash2, X, Minus, Plus as PlusIcon, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame } from 'lucide-react'
+import { Plus, Trash2, Edit3, X, Minus, Plus as PlusIcon, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type TemplateItem } from '../types'
+import { BODY_PARTS, type BodyPart, type TemplateItem, type WorkoutTemplate } from '../types'
 import Header from '../components/Header'
 
 const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
@@ -19,11 +19,13 @@ export default function Templates() {
   const templates = useLiveQuery(() => db.templates.toArray()) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const [name, setName] = useState('')
   const [items, setItems] = useState<TemplateItem[]>([])
   const [selectingExercise, setSelectingExercise] = useState(false)
   const [selectTab, setSelectTab] = useState<BodyPart>('肩')
+  const [customName, setCustomName] = useState('')
 
   const filteredExercises = allExercises.filter((e) => e.bodyPart === selectTab)
 
@@ -31,6 +33,22 @@ export default function Templates() {
     if (items.some((i) => i.exerciseId === exerciseId)) return
     const ex = allExercises.find((e) => e.id === exerciseId)
     setItems([...items, { exerciseId, exerciseName: ex?.name ?? '未知动作', defaultSets: 4, defaultReps: 12 }])
+    setSelectingExercise(false)
+  }
+
+  const addCustomExercise = async () => {
+    const n = customName.trim()
+    if (!n) return
+
+    const id = crypto.randomUUID()
+    const existing = await db.exercises.toArray()
+    const nameExists = existing.find((e) => e.name === n && e.bodyPart === selectTab)
+    if (!nameExists) {
+      await db.exercises.add({ id, name: n, bodyPart: selectTab, createdAt: Date.now() })
+    }
+
+    setItems([...items, { exerciseId: nameExists?.id ?? id, exerciseName: n, defaultSets: 4, defaultReps: 12 }])
+    setCustomName('')
     setSelectingExercise(false)
   }
 
@@ -50,18 +68,37 @@ export default function Templates() {
 
   const handleSave = async () => {
     if (!name.trim() || items.length === 0) return
-    await db.templates.add({
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      items,
-    })
+    if (editingId) {
+      await db.templates.update(editingId, { name: name.trim(), items })
+    } else {
+      await db.templates.add({
+        id: crypto.randomUUID(),
+        name: name.trim(),
+        items,
+      })
+    }
     setName('')
     setItems([])
+    setEditingId(null)
     setShowForm(false)
+  }
+
+  const handleEdit = (template: WorkoutTemplate) => {
+    setEditingId(template.id)
+    setName(template.name)
+    setItems([...template.items])
+    setShowForm(true)
   }
 
   const handleDelete = async (id: string) => {
     await db.templates.delete(id)
+  }
+
+  const handleCancel = () => {
+    setShowForm(false)
+    setEditingId(null)
+    setName('')
+    setItems([])
   }
 
   const getDominantBodyPart = (template: typeof templates[0]) => {
@@ -79,7 +116,7 @@ export default function Templates() {
         title="训练模板"
         rightAction={
           <button
-            onClick={() => setShowForm(true)}
+            onClick={() => { setEditingId(null); setName(''); setItems([]); setShowForm(true) }}
             className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center active:bg-accent/20 transition-colors"
           >
             <Plus size={18} className="text-accent-light" />
@@ -90,8 +127,8 @@ export default function Templates() {
       {showForm && (
         <div className="px-4 py-4 border-b border-border bg-surface-1/50 animate-fade-in">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-primary font-semibold text-sm">新建模板</h3>
-            <button onClick={() => { setShowForm(false); setName(''); setItems([]) }} className="p-1.5 rounded-lg active:bg-surface-2">
+            <h3 className="text-primary font-semibold text-sm">{editingId ? '编辑模板' : '新建模板'}</h3>
+            <button onClick={handleCancel} className="p-1.5 rounded-lg active:bg-surface-2">
               <X size={18} className="text-secondary" />
             </button>
           </div>
@@ -134,7 +171,7 @@ export default function Templates() {
             disabled={!name.trim() || items.length === 0}
             className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:shadow-none"
           >
-            保存模板
+            {editingId ? '保存修改' : '保存模板'}
           </button>
         </div>
       )}
@@ -143,10 +180,30 @@ export default function Templates() {
         <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-scale-in">
           <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
             <h3 className="text-primary font-semibold">选择动作</h3>
-            <button onClick={() => setSelectingExercise(false)} className="p-1.5 rounded-lg active:bg-surface-2">
+            <button onClick={() => { setSelectingExercise(false); setCustomName('') }} className="p-1.5 rounded-lg active:bg-surface-2">
               <X size={22} className="text-secondary" />
             </button>
           </div>
+
+          <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <input
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addCustomExercise()}
+                placeholder="输入自定义动作名称"
+                className="flex-1 bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted"
+              />
+              <button
+                onClick={addCustomExercise}
+                disabled={!customName.trim()}
+                className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center active:bg-accent/20 disabled:opacity-30"
+              >
+                <Check size={18} className="text-accent-light" />
+              </button>
+            </div>
+          </div>
+
           <div className="flex overflow-x-auto gap-2 px-4 py-3 border-b border-border no-scrollbar">
             {BODY_PARTS.map((bp) => (
               <button
@@ -212,6 +269,9 @@ export default function Templates() {
                       {t.items.length} 动作 · {totalSets} 组
                     </p>
                   </div>
+                  <button onClick={() => handleEdit(t)} className="p-2.5 rounded-xl text-muted active:text-accent-light active:bg-accent/10 transition-colors">
+                    <Edit3 size={16} />
+                  </button>
                   <button onClick={() => handleDelete(t.id)} className="p-2.5 rounded-xl text-muted active:text-red-400 active:bg-red-500/10 transition-colors">
                     <Trash2 size={16} />
                   </button>

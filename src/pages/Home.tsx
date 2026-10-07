@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
-import { Play, Clock, Zap, ChevronRight, Shield, Heart, ArrowBigUp, Footprints, Target, Flame } from 'lucide-react'
+import { Play, Clock, Zap, ChevronRight, Shield, Heart, ArrowBigUp, Footprints, Target, Flame, Bike, Waves, Coffee } from 'lucide-react'
 import { db } from '../db'
 import Header from '../components/Header'
 
@@ -12,6 +12,28 @@ const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType
   '二头': { gradient: 'from-pink-500 to-fuchsia-500',  icon: Target },
   '三头': { gradient: 'from-teal-500 to-emerald-500',  icon: Zap },
   '核心': { gradient: 'from-yellow-500 to-orange-500', icon: Flame },
+}
+
+const startAerobic = async (name: string, navigate: (path: string) => void) => {
+  const existing = await db.sessions.filter((s) => !s.finished).first()
+  if (existing) {
+    navigate(`/session/${existing.id}`)
+    return
+  }
+
+  const session = {
+    id: crypto.randomUUID(),
+    templateName: name,
+    date: new Date().toISOString(),
+    duration: 0,
+    exercises: [],
+    finished: false,
+    startTime: Date.now(),
+    aerobic: true,
+  }
+
+  await db.sessions.add(session)
+  navigate(`/session/${session.id}`)
 }
 
 export default function Home() {
@@ -32,31 +54,6 @@ export default function Home() {
     day: 'numeric',
     weekday: 'long',
   })
-
-  const startWorkout = async (templateId?: string) => {
-    const template = templateId
-      ? await db.templates.get(templateId)
-      : undefined
-
-    const session = {
-      id: crypto.randomUUID(),
-      templateId: template?.id,
-      templateName: template?.name ?? '自由训练',
-      date: new Date().toISOString(),
-      duration: 0,
-      exercises: [] as any[],
-      finished: false,
-      startTime: Date.now(),
-    }
-
-    await db.sessions.add(session)
-    navigate(`/session/${session.id}`)
-  }
-
-  const clearAllSessions = async () => {
-    if (!confirm('确定清除所有训练记录？此操作不可撤销。')) return
-    await db.sessions.clear()
-  }
 
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60)
@@ -100,21 +97,89 @@ export default function Home() {
         )}
 
         {/* New workout */}
-        <button
-          onClick={() => startWorkout()}
-          className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-8 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 animate-fade-in"
-        >
-          <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-active:translate-x-[100%] transition-transform duration-700" />
-          <Play size={20} fill="currentColor" />
-          开始空白训练
-        </button>
+        {!activeSession && (
+          <>
+            <button
+              onClick={() => navigate('/pre-workout')}
+              className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-3 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 animate-fade-in"
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-active:translate-x-[100%] transition-transform duration-700" />
+              <Play size={20} fill="currentColor" />
+              开始力量训练
+            </button>
+
+            <div className="grid grid-cols-2 gap-2.5 mb-3">
+              <button
+                onClick={() => startAerobic('跑步', navigate)}
+                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
+              >
+                <Bike size={18} className="text-blue-400" />
+                <span className="text-primary text-sm font-medium">跑步</span>
+              </button>
+              <button
+                onClick={() => startAerobic('游泳', navigate)}
+                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
+              >
+                <Waves size={18} className="text-cyan-400" />
+                <span className="text-primary text-sm font-medium">游泳</span>
+              </button>
+              <button
+                onClick={() => startAerobic('羽毛球', navigate)}
+                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
+              >
+                <Target size={18} className="text-orange-400" />
+                <span className="text-primary text-sm font-medium">羽毛球</span>
+              </button>
+              <button
+                onClick={() => startAerobic('爬楼梯', navigate)}
+                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
+              >
+                <Footprints size={18} className="text-purple-400" />
+                <span className="text-primary text-sm font-medium">爬楼梯</span>
+              </button>
+            </div>
+
+            <button
+              onClick={async () => {
+                const existing = await db.sessions.filter((s) => !s.finished).first()
+                if (existing) {
+                  navigate(`/session/${existing.id}`)
+                  return
+                }
+                const session = {
+                  id: crypto.randomUUID(),
+                  templateName: '休息日',
+                  date: new Date().toISOString(),
+                  duration: 0,
+                  exercises: [] as any[],
+                  finished: true,
+                }
+                await db.sessions.add(session)
+                navigate(`/session-detail/${session.id}`)
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all mb-8"
+            >
+              <Coffee size={16} className="text-muted" />
+              <span className="text-secondary text-sm">休息日</span>
+            </button>
+          </>
+        )}
 
         {/* Templates */}
         {templates.length > 0 && (
           <section className="mb-8 animate-fade-in" style={{ animationDelay: '0.1s' }}>
-            <div className="flex items-center gap-2 mb-4">
-              <Zap size={16} className="text-accent-light" />
-              <h3 className="text-primary text-sm font-semibold tracking-wide">快速开始</h3>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Zap size={16} className="text-accent-light" />
+                <h3 className="text-primary text-sm font-semibold tracking-wide">快速开始</h3>
+              </div>
+              <button
+                onClick={() => navigate('/templates')}
+                className="flex items-center gap-0.5 text-secondary text-xs active:text-primary transition-colors"
+              >
+                管理模板
+                <ChevronRight size={14} />
+              </button>
             </div>
             <div className="grid gap-2.5">
               {templates.map((t) => {
@@ -124,7 +189,7 @@ export default function Home() {
                 return (
                   <button
                     key={t.id}
-                    onClick={() => startWorkout(t.id)}
+                    onClick={() => navigate(`/template/${t.id}`)}
                     className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all duration-200"
                   >
                     <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
@@ -183,16 +248,6 @@ export default function Home() {
             </div>
           </section>
         )}
-
-        {/* Clear all data */}
-        <div className="mt-8 text-center">
-          <button
-            onClick={clearAllSessions}
-            className="text-muted text-xs active:text-red-400 transition-colors"
-          >
-            清除所有训练记录
-          </button>
-        </div>
       </div>
     </div>
   )
