@@ -3,10 +3,11 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig(({ command }) => {
-  // Deployed as a GitHub Pages project site: https://CGz4526.github.io/workout/
-  // Keep the root path during local dev so http://localhost:5173/ keeps working.
-  const base = command === 'build' ? '/workout/' : '/'
+export default defineConfig(() => {
+  // Deploy target is controlled by an env var so the same source works for both:
+  //   Cloudflare Pages (root):   base = "/"          (default)
+  //   GitHub Pages (project):    base = "/workout/"  (set WORKOUT_BASE=/workout/)
+  const base = process.env.WORKOUT_BASE || '/'
 
   return {
     base,

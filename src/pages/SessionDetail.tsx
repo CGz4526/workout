@@ -73,8 +73,14 @@ export default function SessionDetail() {
   const saveSession = async () => {
     if (!sessionId) return
 
+    // Never persist a blank exercise name — it renders as an empty row everywhere.
+    const cleaned = exercises.map((ex) => ({
+      ...ex,
+      exerciseName: ex.exerciseName.trim() || '未命名动作',
+    }))
+
     const patch: Partial<WorkoutSession> = {
-      exercises,
+      exercises: cleaned,
       templateName: session?.templateName,
     }
     const initial = initialRef.current
@@ -83,19 +89,29 @@ export default function SessionDetail() {
     // simply opening the editor and tapping 保存 rewrote the time (seconds were
     // dropped) and the duration (rounded down to whole minutes).
     if (!initial || date !== initial.date) {
-      patch.date = new Date(date).toISOString()
+      // A cleared datetime-local gives "" -> Invalid Date -> toISOString() throws
+      const parsedDate = date ? new Date(date) : null
+      if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+        alert('请先选择训练时间')
+        return
+      }
+      patch.date = parsedDate.toISOString()
     }
     if (!initial || duration !== initial.duration) {
-      patch.duration = Number(duration) * 60
+      const minutes = Number(duration)
+      patch.duration = Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 0
     }
     if (!initial || weight !== initial.weight) {
-      patch.weight = weight ? Number(weight) : undefined
+      const kg = Number(weight)
+      patch.weight = weight && Number.isFinite(kg) ? kg : undefined
     }
     if (!initial || distance !== initial.distance) {
-      patch.distance = distance ? Number(distance) : undefined
+      const km = Number(distance)
+      patch.distance = distance && Number.isFinite(km) ? km : undefined
     }
 
     await db.sessions.update(sessionId, patch)
+    setExercises(cleaned)
     initialRef.current = { date, duration, weight, distance }
     setEditing(false)
   }
@@ -232,7 +248,7 @@ export default function SessionDetail() {
   const totalSets = exercises.reduce((sum, ex) => sum + ex.sets.length, 0)
 
   return (
-    <div className="min-h-screen bg-surface-0 pb-8">
+    <div className="min-h-screen bg-surface-0 pb-24">
       <Header
         title={editing ? '编辑记录' : '训练详情'}
         showBack
@@ -342,7 +358,8 @@ export default function SessionDetail() {
               onChange={(e) => setWeight(e.target.value)}
               onBlur={async () => {
                 if (sessionId) {
-                  await db.sessions.update(sessionId, { weight: weight ? Number(weight) : undefined })
+                  const kg = Number(weight)
+                  await db.sessions.update(sessionId, { weight: weight && Number.isFinite(kg) ? kg : undefined })
                 }
               }}
               placeholder="输入体重"

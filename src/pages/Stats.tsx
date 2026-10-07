@@ -73,7 +73,8 @@ export default function Stats() {
       const d = new Date(s.date)
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
       const isAerobic = s.aerobic === true
-      const isRest = !isAerobic && s.exercises.length === 0
+      // Rest days never ran a timer; see History.tsx for the same rule.
+      const isRest = !isAerobic && s.exercises.length === 0 && !s.startTime
       if (isRest) continue
       if (!dateMap[key]) dateMap[key] = { strength: false, aerobic: false }
       if (isAerobic) dateMap[key].aerobic = true

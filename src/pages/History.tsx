@@ -225,7 +225,10 @@ export default function History() {
               <div className="space-y-2">
                 {items.map((s) => {
                   const isAerobic = s.aerobic === true
-                  const isRest = !isAerobic && s.exercises.length === 0
+                  // A rest day never ran a timer. A strength workout that was
+                  // finished after deleting every exercise still has startTime,
+                  // and must not be silently relabelled as a rest day.
+                  const isRest = !isAerobic && s.exercises.length === 0 && !s.startTime
                   const completedSets = s.exercises.reduce(
                     (sum, ex) => sum + ex.sets.filter((st) => st.completed).length, 0
                   )

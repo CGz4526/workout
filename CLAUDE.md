@@ -8,7 +8,7 @@
 - Vite 8
 - Tailwind CSS 4
 - Dexie.js（IndexedDB）
-- React Router v6
+- React Router v7
 - vite-plugin-pwa
 
 ## 常用命令
@@ -32,6 +32,69 @@ src/
 └── main.tsx       # 入口
 ```
 
-## 部署
+## 部署（Cloudflare Pages）
 
-构建产物在 `dist/` 目录，为纯静态文件，可部署到 GitHub Pages / Vercel / Netlify。
+- 项目名：`workout-app`
+- 生产地址：https://workout-app-681.pages.dev
+- wrangler 为全局安装，项目内没有 `wrangler.toml`
+
+认证二选一：`export CLOUDFLARE_API_TOKEN="<token>"`（非交互环境必须）或 `wrangler login`。
+Token 由用户提供，**不要硬编码进任何会被提交的文件**。
+
+```bash
+cd "d:\CCDevelop\Workout"
+
+# 1. 构建（TypeScript 检查 + 生产构建）
+npm run build
+
+# 2. 部署到 Cloudflare Pages
+export CLOUDFLARE_API_TOKEN="<token>"
+wrangler pages deploy dist --project-name workout-app --branch master
+```
+
+一步合并写法：
+
+```bash
+cd "d:\CCDevelop\Workout" && export CLOUDFLARE_API_TOKEN="<token>" && npm run build && wrangler pages deploy dist --project-name workout-app --branch master
+```
+
+### 关键注意事项
+
+1. **base 路径（最容易踩的坑）**
+   `vite.config.ts` 中 `const base = process.env.WORKOUT_BASE || '/'`
+   - Cloudflare Pages（根路径）→ 用默认 `/`，**不要改**
+   - GitHub Pages（`/workout/` 子路径）→ 才需要 `export WORKOUT_BASE=/workout/`
+   - ⚠️ 为 GitHub Pages 把 base 改成 `/workout/` 后再部署到 Cloudflare，会导致资源 404 白屏
+2. **SPA 深链回退：靠平台默认行为，不要加 `404.html`，也不要加 `_redirects`**
+   - Cloudflare Pages 官方文档明确：**输出目录里没有顶层 `404.html` 时，Pages 会把所有未匹配路径按 SPA 处理并回退到 `/`**（即直接返回 index.html）。所以深链 `/history`、`/stats` 开箱可用。
+   - 曾经的 `public/404.html` 是给 GitHub Pages 子路径写的，硬编码 `pathSegmentsToKeep = 1`。在 CF Pages 根路径下会把 `/history` 重定向成 `/history/?/`，而它**本身仍是 404**，于是无限自我重定向（查询串每轮增长），页面永远白屏。**已删除**。
+   - 也不要加 `/* /index.html 200`：官方文档说明 `_redirects` 里的规则「无论请求是否命中静态资源都会生效」，会把 `/assets/*.js` 也重写成 HTML，导致 `Failed to load module script` 白屏。
+   - 若以后真的要回到 GitHub Pages（子路径部署），需要**重新**加一个能正确推导 base 的 `404.html`；但加了它就会覆盖掉 CF Pages 的原生 SPA 回退，两者只能选一个。
+3. **部署的是 `dist/` 目录内容**（已被 `.gitignore` 忽略），不是源码
+4. **网络超时重试**：Cloudflare API 经常超时（`The request to Cloudflare's API timed out`），直接重试部署命令即可，不需要重新构建
+5. **数据安全（项目铁律）**
+   - 所有数据存在浏览器 IndexedDB，不要在部署代码里 `clear()` / 重建数据库
+   - `src/db/index.ts` 的 `initDB()` 只在空库时播种，迁移用 `bulkPut`，**绝不能加 `clear()`**
+   - 类型新增字段都应是可选的（`?`），保证旧数据兼容
+6. **空值边界（写表单/落库时必守）**
+   - `datetime-local` 与 `type="number"` 的值可能是空字符串。`new Date('')` 是 Invalid Date，`.toISOString()` 会抛 `RangeError`，导致记录静默丢失。落库前必须判空。
+   - 不要用 `if (arr.length === 0) return` 来跳过写入：UI 已经清空、DB 却保留旧值，会造成「删掉的动作复活」。应该用「是否已完成初始化」来门控，而不是用「数组是否非空」。
+   - 区分「休息日」与「训练后动作被删空」：休息日没有 `startTime`，真实训练有。
+7. **敏感文件**：`.claude/settings.local.json` 含 token，已在 `.gitignore`。
+   **不要 `git add -A`**（会误提交敏感文件），用 `git add <具体文件>` 或 `git add src/ public/ ...`
+
+### 验证部署
+
+部署完成会输出一个 preview URL（形如 `https://xxxx.workout-app-681.pages.dev`）。
+生产地址固定为 https://workout-app-681.pages.dev 。
+手机端若还是旧版，是 PWA 缓存，关闭页面重开或强制刷新。
+
+### 提交代码（可选，与部署相互独立）
+
+```bash
+cd "d:\CCDevelop\Workout"
+git add src/ public/ index.html package.json package-lock.json vite.config.ts .gitignore
+git commit -m "feat: 描述改动"
+```
+
+⚠️ 部署到 Cloudflare **不依赖 git push**，`wrangler pages deploy` 直接上传 `dist/` 即可。

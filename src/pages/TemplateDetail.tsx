@@ -34,6 +34,9 @@ export default function TemplateDetail() {
   const [selectTab, setSelectTab] = useState<BodyPart>('肩')
   const [customName, setCustomName] = useState('')
   const savedTimerRef = useRef<number | null>(null)
+  // Holds the not-yet-written edit so it can be flushed if the user leaves
+  // before the 400ms debounce fires.
+  const pendingRef = useRef<{ id: string; items: TemplateItem[] } | null>(null)
 
   useEffect(() => {
     if (templateId) {
@@ -52,8 +55,10 @@ export default function TemplateDetail() {
   useEffect(() => {
     if (!template) return
     if (JSON.stringify(items) === JSON.stringify(template.items)) return
+    pendingRef.current = { id: template.id, items }
     const t = window.setTimeout(async () => {
       await db.templates.update(template.id, { items })
+      pendingRef.current = null
       setTemplate((prev) => (prev ? { ...prev, items } : prev))
       setSaved(true)
       if (savedTimerRef.current) window.clearTimeout(savedTimerRef.current)
@@ -61,6 +66,17 @@ export default function TemplateDetail() {
     }, 400)
     return () => window.clearTimeout(t)
   }, [items, template])
+
+  // Leaving within the debounce window must not silently drop the edit.
+  useEffect(() => {
+    return () => {
+      const pending = pendingRef.current
+      if (pending) {
+        pendingRef.current = null
+        db.templates.update(pending.id, { items: pending.items })
+      }
+    }
+  }, [])
 
   const filteredExercises = allExercises.filter((e) => e.bodyPart === selectTab)
 

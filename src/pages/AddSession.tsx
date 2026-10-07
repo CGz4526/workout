@@ -79,11 +79,20 @@ export default function AddSession() {
   const handleSave = async () => {
     if (exercises.length === 0) return
 
+    // A cleared datetime-local gives "" -> new Date("") is an Invalid Date and
+    // toISOString() would throw, silently losing the whole record.
+    const parsedDate = date ? new Date(date) : null
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+      alert('请先选择训练时间')
+      return
+    }
+
+    const minutes = Number(duration)
     await db.sessions.add({
       id: crypto.randomUUID(),
-      templateName: name || '自由训练',
-      date: new Date(date).toISOString(),
-      duration: duration * 60,
+      templateName: name.trim() || '自由训练',
+      date: parsedDate.toISOString(),
+      duration: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 0,
       exercises,
       finished: true,
     })
@@ -92,7 +101,7 @@ export default function AddSession() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-0 pb-8">
+    <div className="min-h-screen bg-surface-0 pb-24">
       <Header title="添加记录" showBack />
 
       <div className="px-4 py-4 space-y-4">

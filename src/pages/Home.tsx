@@ -198,8 +198,10 @@ export default function Home() {
                     <div className="flex-1 text-left min-w-0">
                       <p className="text-primary font-semibold text-sm">{t.name}</p>
                       <p className="text-muted text-xs mt-0.5">
-                        {t.items.map((item) => item.exerciseName).slice(0, 3).join('、')}
-                        {t.items.length > 3 ? ` +${t.items.length - 3}` : ''}
+                        {t.items.length === 0
+                          ? '暂无动作'
+                          : t.items.map((item) => item.exerciseName).slice(0, 3).join('、') +
+                            (t.items.length > 3 ? ` +${t.items.length - 3}` : '')}
                       </p>
                     </div>
                     <ChevronRight size={18} className="text-surface-3 group-active:text-secondary transition-colors shrink-0" />
@@ -225,7 +227,7 @@ export default function Home() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => navigate(`/session/${s.id}`)}
+                    onClick={() => navigate(`/session-detail/${s.id}`)}
                     className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all duration-200"
                   >
                     <div className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">

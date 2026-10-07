@@ -141,11 +141,14 @@ export default function ActiveWorkout() {
     }
   }, [restEndTime])
 
-  // Persist exercises + rest timer state whenever either changes
+  // Persist exercises + rest timer state whenever either changes.
+  // Gated on `loaded` (not on a non-empty list) so that deleting every exercise
+  // is persisted too — otherwise the UI shows 0 while the DB keeps the previous
+  // state, and the deleted exercises come back on the next visit.
   useEffect(() => {
-    if (finished || exercises.length === 0) return
+    if (finished || !loaded) return
     saveExercises(exercises, restEndTime ?? undefined)
-  }, [exercises, restEndTime, finished, saveExercises])
+  }, [exercises, restEndTime, finished, loaded, saveExercises])
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
