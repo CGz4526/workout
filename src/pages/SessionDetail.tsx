@@ -18,7 +18,7 @@ export default function SessionDetail() {
   const navigate = useNavigate()
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
 
-  const [session, setSession] = useState<any>(null)
+  const [session, setSession] = useState<WorkoutSession | null>(null)
   const [photos, setPhotos] = useState<string[]>([])
   const [previewIdx, setPreviewIdx] = useState<number | null>(null)
   const [weight, setWeight] = useState<string>('')
@@ -75,7 +75,7 @@ export default function SessionDetail() {
 
     const patch: Partial<WorkoutSession> = {
       exercises,
-      templateName: session.templateName,
+      templateName: session?.templateName,
     }
     const initial = initialRef.current
 
@@ -256,7 +256,7 @@ export default function SessionDetail() {
             <div className="space-y-3 mb-3">
               <input
                 value={session.templateName ?? ''}
-                onChange={(e) => setSession({ ...session, templateName: e.target.value })}
+                onChange={(e) => setSession((prev) => (prev ? { ...prev, templateName: e.target.value } : prev))}
                 placeholder="训练名称"
                 className="w-full bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted"
               />
@@ -366,7 +366,7 @@ export default function SessionDetail() {
                 key={value}
                 onClick={async () => {
                   if (sessionId) await db.sessions.update(sessionId, { diet: value })
-                  setSession({ ...session, diet: value })
+                  setSession((prev) => (prev ? { ...prev, diet: value } : prev))
                 }}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-all ${
                   session.diet === value

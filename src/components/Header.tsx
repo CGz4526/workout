@@ -12,16 +12,16 @@ export default function Header({ title, showBack, rightAction }: HeaderProps) {
   const navigate = useNavigate()
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between px-4 h-14 bg-surface-0/80 backdrop-blur-xl border-b border-border">
-      <div className="flex items-center gap-1 w-16">
+    <header className="sticky top-0 z-50 flex items-center gap-2 px-4 h-14 bg-surface-0/80 backdrop-blur-xl border-b border-border">
+      <div className="flex items-center gap-1 shrink-0 min-w-9">
         {showBack && (
           <button onClick={() => navigate(-1)} className="p-1 -ml-1 rounded-lg active:bg-surface-2 transition-colors">
             <ArrowLeft size={22} className="text-secondary" />
           </button>
         )}
       </div>
-      <h1 className="text-base font-semibold text-primary tracking-wide">{title}</h1>
-      <div className="flex items-center gap-1 w-16 justify-end">
+      <h1 className="flex-1 min-w-0 text-center text-base font-semibold text-primary tracking-wide truncate">{title}</h1>
+      <div className="flex items-center gap-1 shrink-0 justify-end whitespace-nowrap">
         {rightAction}
         <ThemeToggle />
       </div>

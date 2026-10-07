@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Minus, Plus, X, Check } from 'lucide-react'
+import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type WorkoutTemplate, type TemplateItem } from '../types'
+import { BODY_PARTS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 
 const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
@@ -15,6 +15,11 @@ const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType
   '三头': { gradient: 'from-teal-500 to-emerald-500',  icon: Zap },
   '核心': { gradient: 'from-yellow-500 to-orange-500', icon: Flame },
 }
+
+// Volume is not editable here any more — a template is just a list of exercises.
+// Sets/reps are adjusted per session on the pre-workout screen.
+const DEFAULT_SETS = 4
+const DEFAULT_REPS = 12
 
 export default function TemplateDetail() {
   const { templateId } = useParams<{ templateId: string }>()
@@ -61,7 +66,7 @@ export default function TemplateDetail() {
 
   const addExercise = (exerciseId: string, exerciseName: string) => {
     if (items.some((i) => i.exerciseId === exerciseId)) return
-    setItems([...items, { exerciseId, exerciseName, defaultSets: 4, defaultReps: 12 }])
+    setItems([...items, { exerciseId, exerciseName, defaultSets: DEFAULT_SETS, defaultReps: DEFAULT_REPS }])
     setSelectingExercise(false)
   }
 
@@ -80,13 +85,7 @@ export default function TemplateDetail() {
     setCustomName('')
     setSelectingExercise(false)
     if (items.some((i) => i.exerciseId === exId)) return
-    setItems([...items, { exerciseId: exId, exerciseName: n, defaultSets: 4, defaultReps: 12 }])
-  }
-
-  const updateItem = (idx: number, field: 'defaultSets' | 'defaultReps', delta: number) => {
-    setItems(items.map((item, i) =>
-      i === idx ? { ...item, [field]: Math.max(1, item[field] + delta) } : item
-    ))
+    setItems([...items, { exerciseId: exId, exerciseName: n, defaultSets: DEFAULT_SETS, defaultReps: DEFAULT_REPS }])
   }
 
   const removeItem = (idx: number) => {
@@ -106,13 +105,13 @@ export default function TemplateDetail() {
       return
     }
 
-    const session = {
+    const session: WorkoutSession = {
       id: crypto.randomUUID(),
       templateId: template.id,
       templateName: template.name,
       date: new Date().toISOString(),
       duration: 0,
-      exercises: [] as any[],
+      exercises: [],
       finished: false,
       startTime: Date.now(),
     }
@@ -130,10 +129,10 @@ export default function TemplateDetail() {
     )
   }
 
-  const totalSets = items.reduce((s, i) => s + i.defaultSets, 0)
+  const exerciseById = new Map(allExercises.map((e) => [e.id, e]))
   const bodyPartCounts: Record<string, number> = {}
   for (const item of items) {
-    const ex = allExercises.find((e) => e.id === item.exerciseId)
+    const ex = exerciseById.get(item.exerciseId)
     if (ex) bodyPartCounts[ex.bodyPart] = (bodyPartCounts[ex.bodyPart] || 0) + 1
   }
   const bp = Object.entries(bodyPartCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '肩'
@@ -145,80 +144,86 @@ export default function TemplateDetail() {
       <Header
         title={template.name}
         showBack
-        rightAction={saved ? <span className="text-accent-light text-xs">已保存</span> : undefined}
+        rightAction={
+          saved ? (
+            <span className="flex items-center gap-1 text-accent-light text-xs font-medium">
+              <Check size={13} />
+              已保存
+            </span>
+          ) : undefined
+        }
       />
 
-      <div className="px-4 py-6">
-        <div className="flex items-center gap-4 mb-2 animate-fade-in">
-          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shadow-lg`}>
-            <Icon size={28} className="text-white" />
+      <div className="px-4 pt-5">
+        {/* Hero */}
+        <div className="flex items-center gap-4 animate-fade-in">
+          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shadow-lg shadow-black/25 shrink-0`}>
+            <Icon size={26} className="text-white" />
           </div>
-          <div>
-            <h2 className="text-xl font-bold text-primary">{template.name}</h2>
-            <p className="text-secondary text-sm mt-0.5">
-              {items.length} 个动作 · {totalSets} 组
-            </p>
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-primary truncate">{template.name}</h2>
+            <p className="text-secondary text-sm mt-0.5">{items.length} 个动作</p>
           </div>
         </div>
-        <p className="text-muted text-xs mb-5 ml-0.5">调整会自动保存，下次进入即为最新版本</p>
 
-        <div className="space-y-2.5 animate-fade-in" style={{ animationDelay: '0.1s' }}>
-          {items.map((item, idx) => (
-            <div key={item.exerciseId} className="p-4 bg-surface-1 rounded-2xl border border-border">
-              <div className="flex items-center gap-3.5">
-                <div className="w-9 h-9 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">
-                  <span className="text-sm font-bold text-secondary">{idx + 1}</span>
-                </div>
-                <p className="flex-1 min-w-0 text-primary font-medium text-sm truncate">{item.exerciseName}</p>
+        {/* Section header */}
+        <div className="flex items-center justify-between mt-7 mb-3 px-0.5">
+          <h3 className="text-muted text-[11px] font-semibold tracking-widest">动作列表</h3>
+          <span className="text-muted text-[11px]">改动自动保存</span>
+        </div>
+
+        {/* Exercise list */}
+        <div className="space-y-2">
+          {items.map((item, idx) => {
+            const ex = exerciseById.get(item.exerciseId)
+            return (
+              <div
+                key={item.exerciseId}
+                className="flex items-center gap-2.5 pl-3 pr-1.5 py-3 bg-surface-1 rounded-xl border border-border animate-fade-in"
+                style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
+              >
+                <span className="w-5 text-center text-xs font-mono text-muted shrink-0">{idx + 1}</span>
+                <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
+                {ex && (
+                  <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent-light border border-accent/15">
+                    {ex.bodyPart}
+                  </span>
+                )}
                 <button
                   onClick={() => removeItem(idx)}
-                  className="p-1.5 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 transition-colors shrink-0"
+                  aria-label={`删除 ${item.exerciseName}`}
+                  className="shrink-0 p-1.5 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 transition-colors"
                 >
-                  <X size={15} />
+                  <X size={16} />
                 </button>
               </div>
+            )
+          })}
 
-              <div className="flex items-center gap-5 mt-3 ml-12">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted text-xs">组</span>
-                  <button onClick={() => updateItem(idx, 'defaultSets', -1)} className="w-6 h-6 rounded-md bg-surface-2 flex items-center justify-center text-secondary active:bg-surface-3">
-                    <Minus size={13} />
-                  </button>
-                  <span className="text-primary text-sm font-mono w-5 text-center">{item.defaultSets}</span>
-                  <button onClick={() => updateItem(idx, 'defaultSets', 1)} className="w-6 h-6 rounded-md bg-surface-2 flex items-center justify-center text-secondary active:bg-surface-3">
-                    <Plus size={13} />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted text-xs">次</span>
-                  <button onClick={() => updateItem(idx, 'defaultReps', -1)} className="w-6 h-6 rounded-md bg-surface-2 flex items-center justify-center text-secondary active:bg-surface-3">
-                    <Minus size={13} />
-                  </button>
-                  <span className="text-primary text-sm font-mono w-6 text-center">{item.defaultReps}</span>
-                  <button onClick={() => updateItem(idx, 'defaultReps', 1)} className="w-6 h-6 rounded-md bg-surface-2 flex items-center justify-center text-secondary active:bg-surface-3">
-                    <Plus size={13} />
-                  </button>
-                </div>
-              </div>
+          {items.length === 0 && (
+            <div className="py-12 text-center">
+              <p className="text-secondary text-sm">还没有动作</p>
+              <p className="text-muted text-xs mt-1">点击下方按钮添加</p>
             </div>
-          ))}
+          )}
 
           <button
             onClick={() => setSelectingExercise(true)}
-            className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-3.5 border border-dashed border-surface-3 rounded-xl text-secondary text-sm active:bg-surface-1 transition-colors"
           >
-            + 添加动作
+            <Plus size={16} />
+            添加动作
           </button>
         </div>
       </div>
 
-      <div className="fixed bottom-16 left-0 right-0 p-4 bg-surface-0/80 backdrop-blur-xl border-t border-border">
+      <div className="fixed bottom-16 left-0 right-0 px-4 py-3 bg-surface-0/85 backdrop-blur-xl border-t border-border">
         <button
           onClick={startWorkout}
           disabled={starting || items.length === 0}
-          className="w-full py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:shadow-none flex items-center justify-center gap-2"
+          className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:shadow-none flex items-center justify-center gap-2"
         >
-          <Play size={20} fill="currentColor" />
+          <Play size={18} fill="currentColor" />
           {starting ? '启动中...' : '开始训练'}
         </button>
       </div>
