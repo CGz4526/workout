@@ -141,7 +141,7 @@ export default function TemplateDetail() {
   const Icon = meta.icon
 
   return (
-    <div className="min-h-screen bg-surface-0 pb-24">
+    <div className="min-h-screen bg-surface-0 pb-48">
       <Header
         title={template.name}
         showBack

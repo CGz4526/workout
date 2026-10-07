@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Camera, X, Clock, Dumbbell, ListChecks, Plus, Trash2, Check, Route } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type ExerciseRecord } from '../types'
+import { BODY_PARTS, type BodyPart, type ExerciseRecord, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 
 const MAX_PHOTOS = 3
@@ -31,39 +31,77 @@ export default function SessionDetail() {
   const [selectTab, setSelectTab] = useState<BodyPart>('肩')
   const [customName, setCustomName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Snapshot of the values as loaded from the DB. Used so that saving only
+  // writes back the fields the user actually touched — otherwise an untouched
+  // date/duration gets silently re-quantised (seconds dropped, a 59s session
+  // stored as 59 minutes, etc.).
+  const initialRef = useRef<{ date: string; duration: string; weight: string; distance: string } | null>(null)
 
   const filteredExercises = allExercises.filter((e) => e.bodyPart === selectTab)
   const isAerobic = session?.aerobic === true
 
   useEffect(() => {
-    if (sessionId) {
-      db.sessions.get(sessionId).then((s) => {
-        if (s) {
-          setSession(s)
-          setPhotos(s.photos ?? [])
-          setWeight(s.weight?.toString() ?? '')
-          setDuration(Math.floor(s.duration / 60).toString())
-          setDistance(s.distance?.toString() ?? '')
-          setDate(toLocalInput(new Date(s.date)))
-          setExercises(s.exercises)
-        } else {
-          navigate('/history')
-        }
-      })
-    }
+    if (!sessionId) return
+    db.sessions.get(sessionId).then((s) => {
+      if (!s) {
+        navigate('/history')
+        return
+      }
+
+      const localDate = toLocalInput(new Date(s.date))
+      const localDuration = Math.floor(s.duration / 60).toString()
+      const localWeight = s.weight?.toString() ?? ''
+      const localDistance = s.distance?.toString() ?? ''
+
+      setSession(s)
+      setPhotos(s.photos ?? [])
+      setWeight(localWeight)
+      setDuration(localDuration)
+      setDistance(localDistance)
+      setDate(localDate)
+      setExercises(s.exercises)
+
+      initialRef.current = {
+        date: localDate,
+        duration: localDuration,
+        weight: localWeight,
+        distance: localDistance,
+      }
+    })
   }, [sessionId])
 
   const saveSession = async () => {
     if (!sessionId) return
-    await db.sessions.update(sessionId, {
+
+    const patch: Partial<WorkoutSession> = {
       exercises,
       templateName: session.templateName,
-      duration: Number(duration) * 60,
-      weight: weight ? Number(weight) : undefined,
-      distance: distance ? Number(distance) : undefined,
-      date: new Date(date).toISOString(),
-    })
+    }
+    const initial = initialRef.current
+
+    // Only write a field back when the user actually changed it. Without this,
+    // simply opening the editor and tapping 保存 rewrote the time (seconds were
+    // dropped) and the duration (rounded down to whole minutes).
+    if (!initial || date !== initial.date) {
+      patch.date = new Date(date).toISOString()
+    }
+    if (!initial || duration !== initial.duration) {
+      patch.duration = Number(duration) * 60
+    }
+    if (!initial || weight !== initial.weight) {
+      patch.weight = weight ? Number(weight) : undefined
+    }
+    if (!initial || distance !== initial.distance) {
+      patch.distance = distance ? Number(distance) : undefined
+    }
+
+    await db.sessions.update(sessionId, patch)
+    initialRef.current = { date, duration, weight, distance }
     setEditing(false)
+  }
+
+  const updateExerciseName = (exIdx: number, name: string) => {
+    setExercises(exercises.map((ex, i) => (i === exIdx ? { ...ex, exerciseName: name } : ex)))
   }
 
   const addExercise = (exerciseId: string, exerciseName: string) => {
@@ -387,12 +425,21 @@ export default function SessionDetail() {
         <div className="space-y-3 animate-fade-in" style={{ animationDelay: '0.2s' }}>
           {exercises.map((ex, exIdx) => (
             <div key={exIdx} className="bg-surface-1 rounded-2xl p-4 border border-border">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+              <div className="flex items-center justify-between mb-3 gap-2">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
                     <span className="text-xs font-bold text-accent-light">{exIdx + 1}</span>
                   </div>
-                  <span className="text-primary font-semibold text-sm">{ex.exerciseName}</span>
+                  {editing ? (
+                    <input
+                      value={ex.exerciseName}
+                      onChange={(e) => updateExerciseName(exIdx, e.target.value)}
+                      placeholder="动作名称"
+                      className="flex-1 min-w-0 bg-surface-2 text-primary px-3 py-1.5 rounded-lg text-sm font-semibold outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted"
+                    />
+                  ) : (
+                    <span className="text-primary font-semibold text-sm truncate">{ex.exerciseName}</span>
+                  )}
                 </div>
                 {editing && (
                   <div className="flex items-center gap-1">
