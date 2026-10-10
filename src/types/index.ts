@@ -50,3 +50,8 @@ export interface WorkoutSession {
 
 export const BODY_PARTS = ['肩', '胸', '背', '腿', '二头', '三头', '核心'] as const
 export type BodyPart = (typeof BODY_PARTS)[number]
+
+// 模板/训练里新增一个动作时的起始组次。
+// 1 组是为了让模板尽量精简——真正练几组在 PreWorkout 页按当次状态调。
+export const DEFAULT_SETS = 1
+export const DEFAULT_REPS = 12

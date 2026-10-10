@@ -1,17 +1,11 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { Exercise, WorkoutTemplate, WorkoutSession } from '../types'
+import { DEFAULT_SETS, type Exercise, type WorkoutTemplate, type WorkoutSession } from '../types'
 
 const db = new Dexie('WorkoutDB') as Dexie & {
   exercises: EntityTable<Exercise, 'id'>
   templates: EntityTable<WorkoutTemplate, 'id'>
   sessions: EntityTable<WorkoutSession, 'id'>
 }
-
-db.version(1).stores({
-  exercises: 'id, bodyPart',
-  templates: 'id',
-  sessions: 'id, date',
-})
 
 const DEFAULT_EXERCISES: Exercise[] = [
   // 肩
@@ -76,76 +70,107 @@ const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
     id: 'tpl-shoulder',
     name: '肩训日',
     items: [
-      { exerciseId: 'ex-1', exerciseName: '绳索面拉', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-2', exerciseName: '哑铃推举', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-3', exerciseName: '哑铃侧平举', defaultSets: 4, defaultReps: 15 },
-      { exerciseId: 'ex-4', exerciseName: '反向飞鸟', defaultSets: 4, defaultReps: 15 },
-      { exerciseId: 'ex-5', exerciseName: '绳索Y举', defaultSets: 4, defaultReps: 12 },
+      { exerciseId: 'ex-1', exerciseName: '绳索面拉', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-2', exerciseName: '哑铃推举', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-3', exerciseName: '哑铃侧平举', defaultSets: DEFAULT_SETS, defaultReps: 15 },
+      { exerciseId: 'ex-4', exerciseName: '反向飞鸟', defaultSets: DEFAULT_SETS, defaultReps: 15 },
+      { exerciseId: 'ex-5', exerciseName: '绳索Y举', defaultSets: DEFAULT_SETS, defaultReps: 12 },
     ],
   },
   {
     id: 'tpl-chest',
     name: '胸训日',
     items: [
-      { exerciseId: 'ex-6', exerciseName: '杠铃卧推', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-7', exerciseName: '上斜卧推', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-8', exerciseName: '杠铃夹胸', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-9', exerciseName: '绳索夹胸', defaultSets: 4, defaultReps: 15 },
-      { exerciseId: 'ex-10', exerciseName: '双杠臂屈伸', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-11', exerciseName: '哑铃飞鸟', defaultSets: 4, defaultReps: 12 },
+      { exerciseId: 'ex-6', exerciseName: '杠铃卧推', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-7', exerciseName: '上斜卧推', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-8', exerciseName: '杠铃夹胸', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-9', exerciseName: '绳索夹胸', defaultSets: DEFAULT_SETS, defaultReps: 15 },
+      { exerciseId: 'ex-10', exerciseName: '双杠臂屈伸', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-11', exerciseName: '哑铃飞鸟', defaultSets: DEFAULT_SETS, defaultReps: 12 },
     ],
   },
   {
     id: 'tpl-back',
     name: '背训日',
     items: [
-      { exerciseId: 'ex-12', exerciseName: '引体向上', defaultSets: 4, defaultReps: 8 },
-      { exerciseId: 'ex-13', exerciseName: '大剪刀下拉', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-14', exerciseName: '坐姿划船', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-15', exerciseName: '高位下拉', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-16', exerciseName: '绳索单臂下拉', defaultSets: 4, defaultReps: 12 },
+      { exerciseId: 'ex-12', exerciseName: '引体向上', defaultSets: DEFAULT_SETS, defaultReps: 8 },
+      { exerciseId: 'ex-13', exerciseName: '大剪刀下拉', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-14', exerciseName: '坐姿划船', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-15', exerciseName: '高位下拉', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-16', exerciseName: '绳索单臂下拉', defaultSets: DEFAULT_SETS, defaultReps: 12 },
     ],
   },
   {
     id: 'tpl-leg',
     name: '腿训日',
     items: [
-      { exerciseId: 'ex-17', exerciseName: '深蹲', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-18', exerciseName: '硬拉', defaultSets: 4, defaultReps: 8 },
-      { exerciseId: 'ex-19', exerciseName: '保加利亚深蹲', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-20', exerciseName: '倒蹬', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-21', exerciseName: '腿弯举', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-22', exerciseName: '内收肌', defaultSets: 4, defaultReps: 15 },
+      { exerciseId: 'ex-17', exerciseName: '深蹲', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-18', exerciseName: '硬拉', defaultSets: DEFAULT_SETS, defaultReps: 8 },
+      { exerciseId: 'ex-19', exerciseName: '保加利亚深蹲', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-20', exerciseName: '倒蹬', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-21', exerciseName: '腿弯举', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-22', exerciseName: '内收肌', defaultSets: DEFAULT_SETS, defaultReps: 15 },
     ],
   },
   {
     id: 'tpl-biceps',
     name: '二头训练',
     items: [
-      { exerciseId: 'ex-23', exerciseName: '杠铃弯举', defaultSets: 4, defaultReps: 10 },
-      { exerciseId: 'ex-24', exerciseName: '锤式弯举', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-25', exerciseName: '三面弯举', defaultSets: 4, defaultReps: 10 },
+      { exerciseId: 'ex-23', exerciseName: '杠铃弯举', defaultSets: DEFAULT_SETS, defaultReps: 10 },
+      { exerciseId: 'ex-24', exerciseName: '锤式弯举', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-25', exerciseName: '三面弯举', defaultSets: DEFAULT_SETS, defaultReps: 10 },
     ],
   },
   {
     id: 'tpl-triceps',
     name: '三头训练',
     items: [
-      { exerciseId: 'ex-26', exerciseName: '绳索下压', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-27', exerciseName: '窄推', defaultSets: 4, defaultReps: 10 },
+      { exerciseId: 'ex-26', exerciseName: '绳索下压', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-27', exerciseName: '窄推', defaultSets: DEFAULT_SETS, defaultReps: 10 },
     ],
   },
   {
     id: 'tpl-core',
     name: '核心训练',
     items: [
-      { exerciseId: 'ex-28', exerciseName: '悬垂举腿', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-29', exerciseName: '跪拜龙门架', defaultSets: 4, defaultReps: 12 },
-      { exerciseId: 'ex-30', exerciseName: '卷腹', defaultSets: 4, defaultReps: 20 },
-      { exerciseId: 'ex-31', exerciseName: '俄罗斯转体', defaultSets: 4, defaultReps: 15 },
+      { exerciseId: 'ex-28', exerciseName: '悬垂举腿', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-29', exerciseName: '跪拜龙门架', defaultSets: DEFAULT_SETS, defaultReps: 12 },
+      { exerciseId: 'ex-30', exerciseName: '卷腹', defaultSets: DEFAULT_SETS, defaultReps: 20 },
+      { exerciseId: 'ex-31', exerciseName: '俄罗斯转体', defaultSets: DEFAULT_SETS, defaultReps: 15 },
     ],
   },
 ]
+
+// 预设模板就是被播种的那几个；迁移只碰它们，用户自建的模板不动。
+const PRESET_TEMPLATE_IDS = DEFAULT_TEMPLATES.map((t) => t.id)
+
+db.version(1).stores({
+  exercises: 'id, bodyPart',
+  templates: 'id',
+  sessions: 'id, date',
+})
+
+// v2：预设模板的动作组数从 4 组改成 1 组（2026-10）。
+// 走 Dexie 的 upgrade 而不是在 initDB 里判断，是为了保证「只执行一次」——
+// 用户之后在 Templates 页把某个预设改回 4 组，不应该在下次启动时被重新覆盖。
+// 只改 templates 表，不碰 sessions（历史记录自带组数快照，与模板无关）。
+db.version(2)
+  .stores({
+    exercises: 'id, bodyPart',
+    templates: 'id',
+    sessions: 'id, date',
+  })
+  .upgrade(async (tx) => {
+    const table = tx.table('templates')
+    const all = (await table.toArray()) as WorkoutTemplate[]
+    const changed = all
+      .filter((t) => PRESET_TEMPLATE_IDS.includes(t.id))
+      .map((t) => ({
+        ...t,
+        items: t.items.map((item) => ({ ...item, defaultSets: DEFAULT_SETS })),
+      }))
+    if (changed.length > 0) await table.bulkPut(changed)
+  })
 
 export async function initDB() {
   // Seed default exercises only on first run — never re-add ones the user deleted

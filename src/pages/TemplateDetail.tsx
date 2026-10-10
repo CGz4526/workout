@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check, GripVertical } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
+import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 
 const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
@@ -15,11 +15,6 @@ const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType
   '三头': { gradient: 'from-teal-500 to-emerald-500',  icon: Zap },
   '核心': { gradient: 'from-yellow-500 to-orange-500', icon: Flame },
 }
-
-// Volume is not editable here any more — a template is just a list of exercises.
-// Sets/reps are adjusted per session on the pre-workout screen.
-const DEFAULT_SETS = 4
-const DEFAULT_REPS = 12
 
 // 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
 type DragMeta = {

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Play, Trash2, X, Minus, Plus as PlusIcon, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type TemplateItem } from '../types'
+import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type TemplateItem } from '../types'
 import Header from '../components/Header'
 
 export default function PreWorkout() {
@@ -20,7 +20,7 @@ export default function PreWorkout() {
   const addExercise = (exerciseId: string) => {
     if (items.some((i) => i.exerciseId === exerciseId)) return
     const ex = allExercises.find((e) => e.id === exerciseId)
-    setItems([...items, { exerciseId, exerciseName: ex?.name ?? '未知动作', defaultSets: 4, defaultReps: 12 }])
+    setItems([...items, { exerciseId, exerciseName: ex?.name ?? '未知动作', defaultSets: DEFAULT_SETS, defaultReps: DEFAULT_REPS }])
     setSelectingExercise(false)
   }
 
@@ -35,7 +35,7 @@ export default function PreWorkout() {
       await db.exercises.add({ id, name, bodyPart: selectTab, createdAt: Date.now() })
     }
 
-    setItems([...items, { exerciseId: nameExists?.id ?? id, exerciseName: name, defaultSets: 4, defaultReps: 12 }])
+    setItems([...items, { exerciseId: nameExists?.id ?? id, exerciseName: name, defaultSets: DEFAULT_SETS, defaultReps: DEFAULT_REPS }])
     setCustomName('')
     setSelectingExercise(false)
   }
