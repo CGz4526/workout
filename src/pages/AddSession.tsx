@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Trash2, X, Check } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, type BodyPart, type ExerciseRecord } from '../types'
+import { isTooShortToRecord } from '../lib/session'
 import Header from '../components/Header'
 
 const toLocalInput = (d: Date) => {
@@ -87,12 +88,19 @@ export default function AddSession() {
       return
     }
 
+    // 留空(0) 视为「时长未知」，允许；但明确填了不足 1 分钟的要拦住
     const minutes = Number(duration)
+    const seconds = Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 0
+    if (isTooShortToRecord(seconds)) {
+      alert('训练时长不足 1 分钟，不会记入训练记录')
+      return
+    }
+
     await db.sessions.add({
       id: crypto.randomUUID(),
       templateName: name.trim() || '自由训练',
       date: parsedDate.toISOString(),
-      duration: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 0,
+      duration: seconds,
       exercises,
       finished: true,
     })

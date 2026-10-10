@@ -8,6 +8,7 @@ import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
 import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
 import { useWakeLock } from '../lib/useWakeLock'
+import { isTooShortToRecord } from '../lib/session'
 
 const REST_SECONDS = 150
 
@@ -34,6 +35,8 @@ export default function ActiveWorkout() {
   const [exercises, setExercises] = useState<ExerciseRecord[]>([])
   const [finished, setFinished] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
+  // 训练不足 1 分钟被丢弃时，记下时长用来给用户一个说明页（而不是静默跳走）
+  const [discardedSeconds, setDiscardedSeconds] = useState<number | null>(null)
   const [, setDisplayTick] = useState(0) // triggers re-render for timer display
   const [finalElapsed, setFinalElapsed] = useState(0)
   const timerRef = useRef<number | null>(null)
@@ -346,9 +349,22 @@ export default function ActiveWorkout() {
     if (!sessionId) return
     if (timerRef.current) clearInterval(timerRef.current)
     if (restTimerRef.current) clearInterval(restTimerRef.current)
+    // 丢掉还没落库的防抖写入，免得它在记录被删掉之后又 update 一次
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+
     const duration = session?.startTime
       ? Math.floor((Date.now() - session.startTime) / 1000)
       : 0
+
+    // 不足 1 分钟的训练直接丢弃，不留空记录。
+    // 休息日不走这条路径——它在 Home 就以 finished: true 建好，直接进详情页。
+    if (isTooShortToRecord(duration)) {
+      await db.sessions.delete(sessionId)
+      setDiscardedSeconds(duration)
+      setFinished(true)
+      return
+    }
+
     setFinalElapsed(duration)
     await db.sessions.update(sessionId, {
       exercises,
@@ -359,6 +375,33 @@ export default function ActiveWorkout() {
     })
     setFinished(true)
     setShowSummary(true)
+  }
+
+  // 太短被丢弃时给一个明确的说明页——静默跳回首页会让用户以为已经存上了。
+  // 必须放在下面那个加载态判断之前：记录已被删除，session 会变成 undefined。
+  if (discardedSeconds !== null) {
+    return (
+      <div className="min-h-screen bg-surface-0 flex flex-col">
+        <Header title="未记录" />
+        <div className="flex-1 px-8 flex flex-col items-center justify-center text-center">
+          <div className="w-16 h-16 rounded-full bg-surface-1 border border-border flex items-center justify-center mb-5">
+            <Timer size={26} className="text-muted" />
+          </div>
+          <h2 className="text-lg font-bold text-primary mb-2">训练不足 1 分钟</h2>
+          <p className="text-secondary text-sm leading-relaxed mb-8">
+            本次只练了 {formatTime(discardedSeconds)}，太短了。
+            <br />
+            已丢弃，没有写入训练记录。
+          </p>
+          <button
+            onClick={() => navigate('/')}
+            className="w-full max-w-xs py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20"
+          >
+            返回首页
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (!session || !loaded) {
