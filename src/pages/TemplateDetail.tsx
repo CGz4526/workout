@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check, ChevronUp, ChevronDown } from 'lucide-react'
+import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check, GripVertical } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
@@ -21,6 +21,16 @@ const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType
 const DEFAULT_SETS = 4
 const DEFAULT_REPS = 12
 
+// 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
+type DragMeta = {
+  startY: number
+  dy: number
+  index: number
+  target: number
+  step: number
+  count: number
+}
+
 export default function TemplateDetail() {
   const { templateId } = useParams<{ templateId: string }>()
   const navigate = useNavigate()
@@ -37,6 +47,11 @@ export default function TemplateDetail() {
   // Holds the not-yet-written edit so it can be flushed if the user leaves
   // before the 400ms debounce fires.
   const pendingRef = useRef<{ id: string; items: TemplateItem[] } | null>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  // 拖动过程中的权威数据放 ref：pointerup 可能早于最后一次 pointermove 的
+  // 重渲染落地，读 state 会拿到过期的 target。
+  const dragMetaRef = useRef<DragMeta | null>(null)
+  const [drag, setDrag] = useState<DragMeta | null>(null)
 
   useEffect(() => {
     if (templateId) {
@@ -108,14 +123,52 @@ export default function TemplateDetail() {
     setItems(items.filter((_, i) => i !== idx))
   }
 
-  // 模板里数组顺序就是训练顺序，所以调序只是交换相邻两项。
-  // 列表 key 用的是 exerciseId（稳定），换位不会导致重挂载。
-  const moveItem = (idx: number, dir: -1 | 1) => {
-    const target = idx + dir
-    if (target < 0 || target >= items.length) return
-    const next = [...items]
-    ;[next[idx], next[target]] = [next[target], next[idx]]
-    setItems(next)
+  // ---- 拖拽调序（Pointer Events）----
+  // 不能用 HTML5 drag-and-drop：移动端浏览器基本不触发。Pointer Events 触屏和鼠标通吃。
+  // 只在手柄上监听 pointerdown，列表其余部分仍可正常滚动。
+  const startDrag = (e: React.PointerEvent<HTMLButtonElement>, idx: number) => {
+    if (items.length < 2) return
+    const rows = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-row]') ?? [])]
+    if (rows.length < 2) return
+
+    // 量一次原始位置。transform 不影响布局，所以拖动期间这些值一直有效。
+    const rects = rows.map((r) => r.getBoundingClientRect())
+    const step = rects[1].top - rects[0].top
+    if (!(step > 0)) return
+
+    dragMetaRef.current = { startY: e.clientY, dy: 0, index: idx, target: idx, step, count: rows.length }
+    setDrag(dragMetaRef.current)
+    // 捕获指针，手指移出手柄范围后仍能收到 move / up
+    e.currentTarget.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  }
+
+  const moveDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const meta = dragMetaRef.current
+    if (!meta) return
+    meta.dy = e.clientY - meta.startY
+    // 行高一致，所以目标槽位可以直接由位移算出来
+    meta.target = Math.max(0, Math.min(meta.count - 1, Math.round(meta.index + meta.dy / meta.step)))
+    setDrag({ ...meta })
+  }
+
+  const endDrag = () => {
+    const meta = dragMetaRef.current
+    dragMetaRef.current = null
+    setDrag(null)
+    if (!meta || meta.target === meta.index) return
+    setItems((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(meta.index, 1)
+      next.splice(meta.target, 0, moved)
+      return next
+    })
+  }
+
+  // 被系统手势打断时不要提交，直接还原
+  const cancelDrag = () => {
+    dragMetaRef.current = null
+    setDrag(null)
   }
 
   const startWorkout = async () => {
@@ -195,51 +248,72 @@ export default function TemplateDetail() {
         {/* Section header */}
         <div className="flex items-center justify-between mt-7 mb-3 px-0.5">
           <h3 className="text-muted text-[11px] font-semibold tracking-widest">动作列表</h3>
-          <span className="text-muted text-[11px]">↑↓ 调序，改动自动保存</span>
+          <span className="text-muted text-[11px]">拖动左侧手柄调序 · 自动保存</span>
         </div>
 
         {/* Exercise list */}
-        <div className="space-y-2">
+        <div ref={listRef} className={`space-y-2 ${drag ? 'select-none' : ''}`}>
           {items.map((item, idx) => {
             const ex = exerciseById.get(item.exerciseId)
+            const isDragging = drag?.index === idx
+            // 起点与目标槽位之间的行让位：整体上移或下移一格。
+            let shift = 0
+            if (drag && !isDragging) {
+              if (drag.index < drag.target && idx > drag.index && idx <= drag.target) shift = -drag.step
+              else if (drag.index > drag.target && idx >= drag.target && idx < drag.index) shift = drag.step
+            }
+            // 序号要显示「松手后会落在第几位」，显示当前位置会骗人
+            const shownIdx = isDragging ? drag.target : shift < 0 ? idx - 1 : shift > 0 ? idx + 1 : idx
             return (
               <div
                 key={item.exerciseId}
-                className="flex items-center gap-2.5 pl-3 pr-1.5 py-3 bg-surface-1 rounded-xl border border-border animate-fade-in"
-                style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
+                data-row
+                className={`rounded-xl border ${
+                  isDragging
+                    ? 'bg-surface-2 border-accent/40 shadow-lg shadow-black/25'
+                    : 'bg-surface-1 border-border'
+                }`}
+                style={{
+                  // 拖拽用 transform，不动布局，所以量到的行位置在整个拖动过程中都成立
+                  transform: isDragging ? `translateY(${drag.dy}px)` : shift ? `translateY(${shift}px)` : undefined,
+                  transition: isDragging ? 'none' : 'transform 160ms ease',
+                  zIndex: isDragging ? 10 : undefined,
+                  position: isDragging ? 'relative' : undefined,
+                }}
               >
-                <span className="w-5 text-center text-xs font-mono text-muted shrink-0">{idx + 1}</span>
-                <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
-                {ex && (
-                  <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent-light border border-accent/15">
-                    {ex.bodyPart}
-                  </span>
-                )}
-                <div className="shrink-0 flex items-center">
+                {/* 入场动画放在内层：animate-fade-in 的 fill-mode 会一直占着
+                    transform，放在外层会把拖拽的 translateY 顶掉 */}
+                <div
+                  className="flex items-center gap-2 pl-2 pr-1.5 py-3 animate-fade-in"
+                  style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
+                >
                   <button
-                    onClick={() => moveItem(idx, -1)}
-                    disabled={idx === 0}
-                    aria-label={`上移 ${item.exerciseName}`}
-                    className="p-1 rounded-lg text-muted active:bg-surface-2 transition-colors disabled:opacity-25"
+                    type="button"
+                    onPointerDown={(e) => startDrag(e, idx)}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={cancelDrag}
+                    aria-label={`拖动调整 ${item.exerciseName} 的顺序`}
+                    className="shrink-0 p-1 -ml-0.5 rounded-lg text-muted active:text-secondary cursor-grab active:cursor-grabbing"
+                    style={{ touchAction: 'none' }}
                   >
-                    <ChevronUp size={15} />
+                    <GripVertical size={16} />
                   </button>
+                  <span className="w-5 text-center text-xs font-mono text-muted shrink-0">{shownIdx + 1}</span>
+                  <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
+                  {ex && (
+                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent-light border border-accent/15">
+                      {ex.bodyPart}
+                    </span>
+                  )}
                   <button
-                    onClick={() => moveItem(idx, 1)}
-                    disabled={idx === items.length - 1}
-                    aria-label={`下移 ${item.exerciseName}`}
-                    className="p-1 rounded-lg text-muted active:bg-surface-2 transition-colors disabled:opacity-25"
+                    onClick={() => removeItem(idx)}
+                    aria-label={`删除 ${item.exerciseName}`}
+                    className="shrink-0 p-1.5 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 transition-colors"
                   >
-                    <ChevronDown size={15} />
+                    <X size={16} />
                   </button>
                 </div>
-                <button
-                  onClick={() => removeItem(idx)}
-                  aria-label={`删除 ${item.exerciseName}`}
-                  className="shrink-0 p-1.5 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 transition-colors"
-                >
-                  <X size={16} />
-                </button>
               </div>
             )
           })}
