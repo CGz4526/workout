@@ -26,6 +26,9 @@ type DragMeta = {
   count: number
 }
 
+// 键盘调序：一次一格。拖拽对键盘 / 读屏用户完全不可用，方向键是兜底。
+const KEYBOARD_STEPS: Record<string, number> = { ArrowUp: -1, ArrowDown: 1 }
+
 export default function TemplateDetail() {
   const { templateId } = useParams<{ templateId: string }>()
   const navigate = useNavigate()
@@ -47,6 +50,8 @@ export default function TemplateDetail() {
   // 重渲染落地，读 state 会拿到过期的 target。
   const dragMetaRef = useRef<DragMeta | null>(null)
   const [drag, setDrag] = useState<DragMeta | null>(null)
+  // 键盘调序的播报文案。读屏用户看不到行位置变化，必须靠 aria-live 说出来。
+  const [announce, setAnnounce] = useState('')
 
   useEffect(() => {
     if (templateId) {
@@ -147,23 +152,51 @@ export default function TemplateDetail() {
     setDrag({ ...meta })
   }
 
+  // 把 from 槽位的条目移到 to 槽位。越界或原地不动都直接返回原数组，
+  // 免得白触发一次重渲染（也会白触发一次自动保存）。
+  const moveItem = (from: number, to: number) => {
+    setItems((prev) => {
+      if (from === to || to < 0 || to >= prev.length || from < 0 || from >= prev.length) return prev
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
+
   const endDrag = () => {
     const meta = dragMetaRef.current
     dragMetaRef.current = null
     setDrag(null)
     if (!meta || meta.target === meta.index) return
-    setItems((prev) => {
-      const next = [...prev]
-      const [moved] = next.splice(meta.index, 1)
-      next.splice(meta.target, 0, moved)
-      return next
-    })
+    moveItem(meta.index, meta.target)
   }
 
   // 被系统手势打断时不要提交，直接还原
   const cancelDrag = () => {
     dragMetaRef.current = null
     setDrag(null)
+  }
+
+  // ---- 键盘调序 ----
+  // 行的 key 是 exerciseId，重排时 React 会把同一个 DOM 节点搬到新位置，
+  // 所以焦点自动跟着手柄走，可以按住方向键连续移动。
+  const keyboardMove = (e: React.KeyboardEvent<HTMLButtonElement>, idx: number) => {
+    const delta = KEYBOARD_STEPS[e.key]
+    if (delta === undefined) return
+    e.preventDefault() // 否则方向键会把页面滚走
+    const to = idx + delta
+    const name = items[idx]?.exerciseName ?? '该动作'
+    if (to < 0) {
+      setAnnounce(`${name} 已经在最前面了`)
+      return
+    }
+    if (to >= items.length) {
+      setAnnounce(`${name} 已经在最后面了`)
+      return
+    }
+    moveItem(idx, to)
+    setAnnounce(`${name} 已移到第 ${to + 1} 位，共 ${items.length} 个动作`)
   }
 
   const startWorkout = async () => {
@@ -243,7 +276,7 @@ export default function TemplateDetail() {
         {/* Section header */}
         <div className="flex items-center justify-between mt-7 mb-3 px-0.5">
           <h3 className="text-muted text-[11px] font-semibold tracking-widest">动作列表</h3>
-          <span className="text-muted text-[11px]">拖动左侧手柄调序 · 自动保存</span>
+          <span className="text-muted text-[11px]">拖动手柄或按方向键调序 · 自动保存</span>
         </div>
 
         {/* Exercise list */}
@@ -288,8 +321,9 @@ export default function TemplateDetail() {
                     onPointerMove={moveDrag}
                     onPointerUp={endDrag}
                     onPointerCancel={cancelDrag}
-                    aria-label={`拖动调整 ${item.exerciseName} 的顺序`}
-                    className="shrink-0 p-1 -ml-0.5 rounded-lg text-muted active:text-secondary cursor-grab active:cursor-grabbing"
+                    onKeyDown={(e) => keyboardMove(e, idx)}
+                    aria-label={`调整 ${item.exerciseName} 的顺序，第 ${idx + 1} 个，共 ${items.length} 个。方向键上下移动`}
+                    className="shrink-0 p-1 -ml-0.5 rounded-lg text-muted active:text-secondary cursor-grab active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
                     style={{ touchAction: 'none' }}
                   >
                     <GripVertical size={16} />
@@ -327,6 +361,11 @@ export default function TemplateDetail() {
             <Plus size={16} />
             添加动作
           </button>
+        </div>
+
+        {/* 键盘调序的结果读屏看不到，靠这里播报。视觉上隐藏，但仍会被读屏朗读。 */}
+        <div aria-live="polite" role="status" className="sr-only">
+          {announce}
         </div>
       </div>
 
