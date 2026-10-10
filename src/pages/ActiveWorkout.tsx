@@ -3,11 +3,29 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus, Minus, Timer, Trophy, Clock, Dumbbell, ListChecks, Zap, Route, X, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type ExerciseRecord } from '../types'
+import { BODY_PARTS, type BodyPart, type ExerciseRecord, type SetRecord } from '../types'
 import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
+import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
+import { useWakeLock } from '../lib/useWakeLock'
 
 const REST_SECONDS = 150
+
+// "上次成绩" 的日期前缀：只到「天」这一粒度就够了，精确到时分反而难读。
+function daysAgoLabel(dateStr: string) {
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const diff = Math.round((startOfDay(new Date()) - startOfDay(new Date(dateStr))) / 86400000)
+  if (diff <= 0) return '今天'
+  if (diff === 1) return '昨天'
+  if (diff < 30) return `${diff} 天前`
+  return `${Math.floor(diff / 30)} 个月前`
+}
+
+// 最多列 3 组，再多会把动作名挤掉
+function formatPrevSets(sets: SetRecord[]) {
+  const shown = sets.slice(0, 3).map((s) => `${s.weight ?? '-'}×${s.reps ?? '-'}`).join(' · ')
+  return sets.length > 3 ? `${shown} +${sets.length - 3}` : shown
+}
 
 export default function ActiveWorkout() {
   const { sessionId } = useParams<{ sessionId: string }>()
@@ -25,6 +43,15 @@ export default function ActiveWorkout() {
   const [loaded, setLoaded] = useState(false)
   const restTimerRef = useRef<number | null>(null)
   const initializedForRef = useRef<string | null>(null)
+  // 已经播报过的休息结束时间戳，保证同一次休息只提醒一次
+  // （interval 可能在下一次重渲染清空 state 之前再跳一次）。
+  const restAlertedRef = useRef<number | null>(null)
+  const notifAskedRef = useRef(false)
+  const [notifState, setNotifState] = useState<NotificationPermission | 'unsupported'>(
+    () => notificationPermission()
+  )
+  // 动作 → 最近一次已结束训练的成绩，用于训练时显示「上次」
+  const [lastPerf, setLastPerf] = useState<Record<string, { sets: SetRecord[]; date: string }>>({})
 
   // Calculate elapsed from startTime
   const elapsed = finished
@@ -132,6 +159,12 @@ export default function ActiveWorkout() {
     restTimerRef.current = window.setInterval(() => {
       setDisplayTick((t) => t + 1) // trigger re-render to recalculate
       if (Date.now() >= restEndTime) {
+        // 后台标签页的定时器会被节流，所以这里可能在超时后才第一次命中——
+        // 那也照样提醒（用户刚回到页面时正需要这个提示）。
+        if (restAlertedRef.current !== restEndTime) {
+          restAlertedRef.current = restEndTime
+          alertRestDone()
+        }
         setRestEndTime(null)
         if (restTimerRef.current) clearInterval(restTimerRef.current)
       }
@@ -150,6 +183,43 @@ export default function ActiveWorkout() {
     saveExercises(exercises, restEndTime ?? undefined)
   }, [exercises, restEndTime, finished, loaded, saveExercises])
 
+  // 整个训练过程保持屏幕常亮——训练中伸手去点手机结果发现它锁屏了，
+  // 正好抵消掉「实时记录」的意义。
+  useWakeLock(!finished && loaded)
+
+  // 「上次成绩」：该动作最近一次**已结束**训练里真正完成的组。
+  // 只在进入本次训练时算一次——训练期间唯一会变的是当前这条记录，而它已被排除。
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    db.sessions
+      .toArray()
+      .then((all) => {
+        if (cancelled) return
+        const map: Record<string, { sets: SetRecord[]; date: string }> = {}
+        all
+          .filter((s) => s.finished && s.id !== sessionId)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .forEach((s) => {
+            for (const ex of s.exercises) {
+              const done = ex.sets.filter((st) => st.completed)
+              if (done.length === 0) continue
+              // 从新到旧遍历，第一次命中即为最近一次。
+              // 同时按 id 和名称建索引：训练中新增的自定义动作可能带新 id。
+              if (!map[ex.exerciseId]) map[ex.exerciseId] = { sets: done, date: s.date }
+              if (!map[ex.exerciseName]) map[ex.exerciseName] = { sets: done, date: s.date }
+            }
+          })
+        setLastPerf(map)
+      })
+      .catch(() => {
+        // 读历史失败不应该影响正在进行的训练
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId])
+
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)
     const m = Math.floor((seconds % 3600) / 60)
@@ -165,6 +235,16 @@ export default function ActiveWorkout() {
   }
 
   const startRest = () => {
+    // 这里是从点击事件同步调用的，而 iOS 只允许在用户手势里解锁音频，
+    // 所以必须在这一刻 prime，否则休息结束的提示音会一直是哑的。
+    primeAudio()
+    // 通知权限只在第一次开始休息时问一次：此刻是真实用户手势（Chrome 的硬性要求），
+    // 而且「组间休息」这个上下文能让权限弹窗显得不突兀。
+    if (!notifAskedRef.current && notifState === 'default') {
+      notifAskedRef.current = true
+      requestNotificationPermission().then(setNotifState)
+    }
+    restAlertedRef.current = null
     setRestEndTime(Date.now() + REST_SECONDS * 1000)
   }
 
@@ -470,6 +550,7 @@ export default function ActiveWorkout() {
         <div className="px-4 py-4 space-y-5">
           {exercises.map((ex, exIdx) => {
             const allDone = ex.sets.every((s) => s.completed)
+            const prev = lastPerf[ex.exerciseId] ?? lastPerf[ex.exerciseName]
             return (
               <div key={exIdx} className={`bg-surface-1 rounded-2xl p-4 border transition-colors duration-300 ${allDone ? 'border-accent/20' : 'border-border'}`}>
                 <div className="flex items-center justify-between mb-3">
@@ -484,6 +565,11 @@ export default function ActiveWorkout() {
                       <p className="text-muted text-[10px] mt-0.5">
                         {ex.sets.filter(s => s.completed).length}/{ex.sets.length} 组
                       </p>
+                      {prev && (
+                        <p className="text-muted/80 text-[10px] mt-0.5 max-w-[190px] truncate">
+                          上次 {daysAgoLabel(prev.date)}：{formatPrevSets(prev.sets)}
+                        </p>
+                      )}
                     </div>
                   </div>
                   {!finished && (
@@ -606,6 +692,14 @@ export default function ActiveWorkout() {
               +1分钟
             </button>
           </div>
+
+          {notifState !== 'granted' && (
+            <p className="text-muted text-[10px] -mt-4 mb-6 px-10 text-center leading-relaxed">
+              {notifState === 'denied'
+                ? '通知已被拒绝，休息结束只会有震动和提示音'
+                : '锁屏或切到后台时可能收不到提醒，建议允许通知'}
+            </p>
+          )}
 
           <button
             onClick={skipRest}

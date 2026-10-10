@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check } from 'lucide-react'
+import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check, ChevronUp, ChevronDown } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
@@ -108,6 +108,16 @@ export default function TemplateDetail() {
     setItems(items.filter((_, i) => i !== idx))
   }
 
+  // 模板里数组顺序就是训练顺序，所以调序只是交换相邻两项。
+  // 列表 key 用的是 exerciseId（稳定），换位不会导致重挂载。
+  const moveItem = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir
+    if (target < 0 || target >= items.length) return
+    const next = [...items]
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    setItems(next)
+  }
+
   const startWorkout = async () => {
     if (starting || items.length === 0 || !template) return
     setStarting(true)
@@ -185,7 +195,7 @@ export default function TemplateDetail() {
         {/* Section header */}
         <div className="flex items-center justify-between mt-7 mb-3 px-0.5">
           <h3 className="text-muted text-[11px] font-semibold tracking-widest">动作列表</h3>
-          <span className="text-muted text-[11px]">改动自动保存</span>
+          <span className="text-muted text-[11px]">↑↓ 调序，改动自动保存</span>
         </div>
 
         {/* Exercise list */}
@@ -205,6 +215,24 @@ export default function TemplateDetail() {
                     {ex.bodyPart}
                   </span>
                 )}
+                <div className="shrink-0 flex items-center">
+                  <button
+                    onClick={() => moveItem(idx, -1)}
+                    disabled={idx === 0}
+                    aria-label={`上移 ${item.exerciseName}`}
+                    className="p-1 rounded-lg text-muted active:bg-surface-2 transition-colors disabled:opacity-25"
+                  >
+                    <ChevronUp size={15} />
+                  </button>
+                  <button
+                    onClick={() => moveItem(idx, 1)}
+                    disabled={idx === items.length - 1}
+                    aria-label={`下移 ${item.exerciseName}`}
+                    className="p-1 rounded-lg text-muted active:bg-surface-2 transition-colors disabled:opacity-25"
+                  >
+                    <ChevronDown size={15} />
+                  </button>
+                </div>
                 <button
                   onClick={() => removeItem(idx)}
                   aria-label={`删除 ${item.exerciseName}`}

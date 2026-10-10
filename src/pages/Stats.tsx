@@ -1,12 +1,62 @@
 import { useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { TrendingUp, Calendar, Activity, Dumbbell, ChevronLeft, ChevronRight } from 'lucide-react'
+import { TrendingUp, Calendar, Activity, Dumbbell, ChevronLeft, ChevronRight, ChartColumn } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS } from '../types'
+import { BODY_PARTS, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 
 type TimeRange = '1w' | '1m' | '3m'
+
+type Bucket = { label: string; start: number; end: number }
+
+// 分桶方式与「训练频次」图保持一致，这样两张图说的是同一批时间段。
+const buildBuckets = (range: TimeRange, now: Date): Bucket[] => {
+  if (range === '1w') {
+    return Array.from({ length: 7 }, (_, i) => {
+      const start = new Date(now)
+      start.setDate(now.getDate() - (6 - i))
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(start)
+      end.setDate(start.getDate() + 1)
+      return {
+        label: start.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+        start: start.getTime(),
+        end: end.getTime(),
+      }
+    })
+  }
+  if (range === '1m') {
+    return Array.from({ length: 4 }, (_, i) => {
+      const end = new Date(now)
+      end.setDate(now.getDate() - (3 - i) * 7)
+      end.setHours(23, 59, 59, 999)
+      const start = new Date(end)
+      start.setDate(end.getDate() - 6)
+      start.setHours(0, 0, 0, 0)
+      return {
+        label: `${start.getMonth() + 1}/${start.getDate()}周`,
+        start: start.getTime(),
+        end: end.getTime(),
+      }
+    })
+  }
+  return Array.from({ length: 3 }, (_, i) => {
+    const start = new Date(now.getFullYear(), now.getMonth() - (2 - i), 1)
+    const end = new Date(now.getFullYear(), now.getMonth() - (1 - i), 1)
+    return { label: `${start.getMonth() + 1}月`, start: start.getTime(), end: end.getTime() }
+  })
+}
+
+// 训练容量 = Σ(重量 × 次数)。只算「已完成且填了重量」的组：
+// 自重动作没有重量，计入会把容量拉低成噪声。
+const sessionVolume = (s: WorkoutSession) =>
+  s.exercises.reduce(
+    (sum, ex) =>
+      sum +
+      ex.sets.reduce((v, st) => v + (st.completed ? (st.weight ?? 0) * (st.reps ?? 0) : 0), 0),
+    0
+  )
 
 const PART_COLORS: Record<string, string> = {
   '肩': '#f59e0b',
@@ -269,6 +319,25 @@ export default function Stats() {
     return { data: months, label: '三月' }
   }, [strengthSessions, timeRange])
 
+  // Training volume per bucket — the one curve that actually shows progress,
+  // which frequency/body-part counts cannot.
+  const volumeData = useMemo(() => {
+    const now = new Date()
+    now.setHours(23, 59, 59, 999)
+    const buckets = buildBuckets(timeRange, now)
+    const data = buckets.map((b) => ({ day: b.label, volume: 0 }))
+
+    for (const s of strengthSessions) {
+      const vol = sessionVolume(s)
+      if (vol <= 0) continue
+      const t = new Date(s.date).getTime()
+      const i = buckets.findIndex((b) => t >= b.start && t < b.end)
+      if (i >= 0) data[i].volume += vol
+    }
+
+    return { data, total: data.reduce((sum, d) => sum + d.volume, 0) }
+  }, [strengthSessions, timeRange])
+
   return (
     <div className="min-h-screen bg-surface-0 pb-20">
       <Header title="数据统计" />
@@ -413,6 +482,40 @@ export default function Stats() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {/* Training volume */}
+        {volumeData.total > 0 && (
+          <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <ChartColumn size={16} className="text-accent-light" />
+                <h3 className="text-primary font-semibold text-sm">训练容量</h3>
+              </div>
+              <span className="text-primary text-sm font-bold font-mono">
+                {Math.round(volumeData.total).toLocaleString('zh-CN')} kg
+              </span>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={volumeData.data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-surface-2)" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'var(--color-surface-2)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                  }}
+                />
+                <Bar dataKey="volume" name="容量 (kg)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <p className="text-muted text-[10px] mt-2 leading-relaxed">
+              重量 × 次数，只统计已完成且填写了重量的组；自重动作不计入。
+            </p>
+          </div>
+        )}
 
         {/* Aerobic stats */}
         {aerobicStats.total > 0 && (
