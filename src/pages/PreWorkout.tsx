@@ -5,6 +5,7 @@ import { Play, Trash2, X, Minus, Plus as PlusIcon, Check } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type TemplateItem } from '../types'
 import Header from '../components/Header'
+import { type CountField, stepItemCount } from '../lib/template'
 
 export default function PreWorkout() {
   const navigate = useNavigate()
@@ -40,11 +41,11 @@ export default function PreWorkout() {
     setSelectingExercise(false)
   }
 
-  const updateItem = (idx: number, field: 'defaultSets' | 'defaultReps', delta: number) => {
+  const updateItem = (idx: number, field: CountField, delta: number) => {
     setItems(
       items.map((item, i) =>
         i === idx
-          ? { ...item, [field]: Math.max(1, item[field] + delta) }
+          ? { ...item, [field]: stepItemCount(field, item[field], delta) }
           : item
       )
     )

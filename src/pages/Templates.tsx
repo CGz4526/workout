@@ -4,6 +4,7 @@ import { Plus, Trash2, Edit3, X, Minus, Plus as PlusIcon, Shield, Heart, ArrowBi
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type TemplateItem, type WorkoutTemplate } from '../types'
 import Header from '../components/Header'
+import { type CountField, stepItemCount } from '../lib/template'
 
 const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
   '肩':   { gradient: 'from-orange-500 to-amber-500', icon: Shield },
@@ -52,11 +53,11 @@ export default function Templates() {
     setSelectingExercise(false)
   }
 
-  const updateItem = (idx: number, field: 'defaultSets' | 'defaultReps', delta: number) => {
+  const updateItem = (idx: number, field: CountField, delta: number) => {
     setItems(
       items.map((item, i) =>
         i === idx
-          ? { ...item, [field]: Math.max(1, item[field] + delta) }
+          ? { ...item, [field]: stepItemCount(field, item[field], delta) }
           : item
       )
     )

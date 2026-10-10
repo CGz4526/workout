@@ -3,12 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus, Minus, Timer, Trophy, Clock, Dumbbell, ListChecks, Zap, Route, X, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type ExerciseRecord, type SetRecord } from '../types'
+import { BODY_PARTS, type BodyPart, type ExerciseRecord, type SetRecord, type TemplateItem } from '../types'
 import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
 import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
 import { useWakeLock } from '../lib/useWakeLock'
 import { isTooShortToRecord } from '../lib/session'
+import { sanitizeItem } from '../lib/template'
 
 const REST_SECONDS = 150
 
@@ -26,6 +27,25 @@ function daysAgoLabel(dateStr: string) {
 function formatPrevSets(sets: SetRecord[]) {
   const shown = sets.slice(0, 3).map((s) => `${s.weight ?? '-'}×${s.reps ?? '-'}`).join(' · ')
   return sets.length > 3 ? `${shown} +${sets.length - 3}` : shown
+}
+
+// 把模板动作铺成训练记录。
+// defaultSets 有两个不受源码控制的来源（备份导入、sessionStorage 的 preset），
+// 所以必须先用 sanitizeItem 夹住再 Array.from——一个坏掉的备份里出现
+// defaultSets: 100000，这里就会当场铺出十万个组对象把页面卡死。
+function buildRecordsFromItems(items: TemplateItem[]): ExerciseRecord[] {
+  return items.map((raw) => {
+    const item = sanitizeItem(raw)
+    return {
+      exerciseId: item.exerciseId,
+      exerciseName: item.exerciseName,
+      sets: Array.from({ length: item.defaultSets }, () => ({
+        weight: undefined as number | undefined,
+        reps: item.defaultReps,
+        completed: false,
+      })),
+    }
+  })
 }
 
 export default function ActiveWorkout() {
@@ -103,34 +123,14 @@ export default function ActiveWorkout() {
       const presetKey = `preset-${sessionId}`
       const presetData = sessionStorage.getItem(presetKey)
       if (presetData) {
-        const presetItems = JSON.parse(presetData) as { exerciseId: string; exerciseName: string; defaultSets: number; defaultReps: number }[]
-        setExercises(
-          presetItems.map((item) => ({
-            exerciseId: item.exerciseId,
-            exerciseName: item.exerciseName,
-            sets: Array.from({ length: item.defaultSets }, () => ({
-              weight: undefined as number | undefined,
-              reps: item.defaultReps,
-              completed: false,
-            })),
-          }))
-        )
+        const presetItems = JSON.parse(presetData) as TemplateItem[]
+        setExercises(buildRecordsFromItems(presetItems))
         sessionStorage.removeItem(presetKey)
         setLoaded(true)
       } else if (session.templateId) {
         db.templates.get(session.templateId).then((template) => {
           if (template && template.items.length > 0) {
-            setExercises(
-              template.items.map((item) => ({
-                exerciseId: item.exerciseId,
-                exerciseName: item.exerciseName,
-                sets: Array.from({ length: item.defaultSets }, () => ({
-                  weight: undefined as number | undefined,
-                  reps: item.defaultReps,
-                  completed: false,
-                })),
-              }))
-            )
+            setExercises(buildRecordsFromItems(template.items))
           }
           setLoaded(true)
         })
