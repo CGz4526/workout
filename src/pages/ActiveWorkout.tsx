@@ -50,18 +50,21 @@ function secondsToMinutesInput(seconds: number): string {
  */
 function buildRecordsFromItems(items: unknown): ExerciseRecord[] {
   if (!Array.isArray(items)) return []
-  return items.map((raw) => {
-    const item = sanitizeItem(raw as TemplateItem)
-    return {
-      exerciseId: item.exerciseId,
-      exerciseName: item.exerciseName,
-      sets: Array.from({ length: item.defaultSets }, () => ({
-        weight: undefined as number | undefined,
-        reps: item.defaultReps,
-        completed: false,
-      })),
-    }
-  })
+  return items
+    // 数组里混进 null / 数字也要活下来：sanitizeItem 会去读 item.defaultSets
+    .filter((raw): raw is TemplateItem => !!raw && typeof raw === 'object')
+    .map((raw) => {
+      const item = sanitizeItem(raw)
+      return {
+        exerciseId: item.exerciseId,
+        exerciseName: item.exerciseName,
+        sets: Array.from({ length: item.defaultSets }, () => ({
+          weight: undefined as number | undefined,
+          reps: item.defaultReps,
+          completed: false,
+        })),
+      }
+    })
 }
 
 export default function ActiveWorkout() {

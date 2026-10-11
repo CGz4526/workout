@@ -131,23 +131,30 @@ export default function History() {
     }
 
     for (const ex of s.exercises) {
+      // 名字可能缺失（坏备份里的动作只带 id），统一先取一个字符串再用。
+      const name = typeof ex.exerciseName === 'string' ? ex.exerciseName : ''
       const def = allExercises.find((e) => e.id === ex.exerciseId)
+
       if (def) {
-        parts.add(def.bodyPart)
-      } else if (ex.exerciseName) {
-        const byName = allExercises.find((e) => e.name === ex.exerciseName)
+        if (def.bodyPart) parts.add(def.bodyPart)
+      } else if (name) {
+        const byName = allExercises.find((e) => e.name === name)
         if (byName) {
-          parts.add(byName.bodyPart)
+          if (byName.bodyPart) parts.add(byName.bodyPart)
         } else {
-          const byPartial = allExercises.find((e) => e.name.includes(ex.exerciseName) || ex.exerciseName.includes(e.name))
-          if (byPartial) parts.add(byPartial.bodyPart)
+          const byPartial = allExercises.find(
+            (e) => typeof e.name === 'string' && (e.name.includes(name) || name.includes(e.name)),
+          )
+          if (byPartial?.bodyPart) parts.add(byPartial.bodyPart)
         }
       }
 
-      // Check extra parts from keywords
-      for (const [keyword, exParts] of Object.entries(extraParts)) {
-        if (ex.exerciseName.includes(keyword)) {
-          exParts.forEach(p => parts.add(p))
+      // 关键词补充部位。原来这一步在 else 之外，动作没名字时会在 .includes 上抛错。
+      if (name) {
+        for (const [keyword, exParts] of Object.entries(extraParts)) {
+          if (name.includes(keyword)) {
+            exParts.forEach(p => parts.add(p))
+          }
         }
       }
     }
@@ -180,11 +187,16 @@ export default function History() {
 
   const grouped: Record<string, typeof sessions> = {}
   for (const s of sessions) {
-    const dateKey = new Date(s.date).toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+    const parsed = new Date(s.date)
+    // 日期解析不了时（坏备份 / 手改过的文件）不要把它渲染成「INVALID DATE」——
+    // 给一个中性的分组名，记录本身照常显示。
+    const dateKey = Number.isNaN(parsed.getTime())
+      ? '日期未知'
+      : parsed.toLocaleDateString('zh-CN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
     if (!grouped[dateKey]) grouped[dateKey] = []
     grouped[dateKey].push(s)
   }

@@ -1,6 +1,6 @@
 // 训练记录的写入门槛。
 
-import type { WorkoutSession } from '../types'
+import type { ExerciseRecord, SetRecord, WorkoutSession } from '../types'
 
 // 少于 1 分钟的训练视为误触或试手，不写入记录。
 export const MIN_SESSION_SECONDS = 60
@@ -16,28 +16,46 @@ export const isTooShortToRecord = (seconds: number) =>
   Number.isFinite(seconds) && seconds > 0 && seconds < MIN_SESSION_SECONDS
 
 /**
+ * 是不是一个「像记录」的对象。
+ *
+ * 三个表都是 `keyPath: 'id'`，所以 null / 数字 / 字符串这类元素连 put 都过不了
+ * （`DataError: key path did not yield a value`），导入走 bulkAdd 同理会让整个
+ * 事务回滚。但**嵌套数组**没有这层保护：`{ id, exercises: [null] }` 是存得进去的。
+ */
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
  * 把从库里读出来的记录补成「字段一定存在」的形状。
  *
  * `Settings` 的备份导入是 `JSON.parse` + `bulkAdd`，对内容零校验，所以库里
- * 完全可能出现缺字段的记录（手改过的备份、别的版本导出的文件）。而
- * `s.exercises.reduce(...)` / `for (const ex of s.exercises)` / `s.exercises.length`
- * 散落在 Home、History、Stats、SessionDetail、ActiveWorkout 五处，
- * `ex.sets.filter(...)` / `ex.sets.reduce(...)` 也散落在其中四处——任意一处读到
- * undefined 都会抛 TypeError，React 整棵树挂掉，页面直接空白。
+ * 完全可能出现缺字段、甚至嵌套数组里混着 null 的记录（手改过的备份、别的版本
+ * 导出的文件）。而 `s.exercises.reduce(...)` / `for (const ex of s.exercises)` /
+ * `ex.sets.filter(...)` 散落在 Home、History、Stats、SessionDetail、ActiveWorkout
+ * 五处——任意一处读到 undefined / null 都会抛 TypeError，React 整棵树挂掉，
+ * 页面直接空白。
  *
  * 所以兜底放在**读取边界**上，而不是逐个消费点写 `?? []`：新增读取字段时不会再漏。
  * 只夹写入侧是不够的——库里已有的坏数据照样能炸。
  *
+ * 处理三件事：缺 `exercises` → `[]`；`exercises` 里的非对象元素丢掉；
+ * `sets` 缺 → `[]`、里面的非对象元素丢掉。
  * 没有实际改动时返回**原对象**，避免下游 useMemo / useLiveQuery 白重渲染。
  */
 export function normalizeSession(s: WorkoutSession): WorkoutSession {
-  const exercises = Array.isArray(s.exercises) ? s.exercises : []
+  const rawEx: unknown[] = Array.isArray(s.exercises) ? s.exercises : []
+  // every() 为真时直接复用原数组，保持引用不变
+  const exercises = (rawEx.every(isRecord) ? rawEx : rawEx.filter(isRecord)) as unknown as ExerciseRecord[]
   let changed = exercises !== s.exercises
+
   const fixed = exercises.map((ex) => {
-    if (Array.isArray(ex.sets)) return ex
+    const rawSets: unknown[] = Array.isArray(ex.sets) ? ex.sets : []
+    const sets = (rawSets.every(isRecord) ? rawSets : rawSets.filter(isRecord)) as unknown as SetRecord[]
+    if (sets === ex.sets) return ex
     changed = true
-    return { ...ex, sets: [] }
+    return { ...ex, sets }
   })
+
   return changed ? { ...s, exercises: fixed } : s
 }
 

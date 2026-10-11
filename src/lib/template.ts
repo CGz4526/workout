@@ -36,26 +36,39 @@ export function stepItemCount(field: CountField, value: number, delta: number): 
   return clampItemCount(field, value + delta)
 }
 
+/** 是不是一个「像条目」的对象。嵌套数组没有 keyPath 那层保护，什么都能塞进来。 */
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
 /** 把整条动作的 sets / reps 都夹一遍。用于消费外部来源的数据。 */
 export function sanitizeItem(item: TemplateItem): TemplateItem {
-  return {
-    ...item,
-    defaultSets: clampItemCount('defaultSets', item.defaultSets),
-    defaultReps: clampItemCount('defaultReps', item.defaultReps),
-  }
+  const sets = clampItemCount('defaultSets', item.defaultSets)
+  const reps = clampItemCount('defaultReps', item.defaultReps)
+  // 没改动就返回原对象，让上层能靠引用判断「这条不需要重建」
+  if (sets === item.defaultSets && reps === item.defaultReps) return item
+  return { ...item, defaultSets: sets, defaultReps: reps }
 }
 
 /**
  * 把从库里读出来的模板补成「字段一定存在」的形状。
  *
- * 与 `normalizeSession` 同一个理由：备份导入零校验，缺 `items` 的模板完全可能
- * 存在。而 `for (const item of t.items)`（`Templates.getDominantBodyPart`）会抛
- * `TypeError: t.items is not iterable`、`t.items.reduce(...)` / `t.items.map(...)`
- * 也会抛——Home 与 Templates 两个页面会**整页白屏**。
+ * 与 `normalizeSession` 同一个理由：备份导入零校验。缺 `items` 会让
+ * `for (const item of t.items)`（`Templates.getDominantBodyPart`）抛
+ * `TypeError: t.items is not iterable`；`items` 里混进 null 会让
+ * `i.defaultSets` / `item.exerciseName` 抛 `Cannot read properties of null`。
+ * 两种情况都会让 Home 与 Templates **整页白屏**。
  *
- * 兜底放在读取边界，新增消费点不会再漏。没改动时返回原对象，避免多余的重渲染。
+ * 顺手把组数/次数夹一遍，这样渲染层永远不会出现「undefined×undefined」。
+ * 没改动时返回**原对象**。
  */
 export function normalizeTemplate(t: WorkoutTemplate): WorkoutTemplate {
-  if (Array.isArray(t.items)) return t
-  return { ...t, items: [] }
+  const prev = Array.isArray(t.items) ? t.items : []
+  const raw: unknown[] = prev
+  const items = (raw.every(isRecord) ? raw : raw.filter(isRecord)) as unknown as TemplateItem[]
+  const sanitized = items.map(sanitizeItem)
+  const untouched =
+    Array.isArray(t.items) &&
+    sanitized.length === prev.length &&
+    sanitized.every((it, i) => it === prev[i])
+  return untouched ? t : { ...t, items: sanitized }
 }
