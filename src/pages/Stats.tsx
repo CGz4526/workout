@@ -597,8 +597,10 @@ export default function Stats() {
                     borderRadius: '12px',
                     fontSize: '12px',
                   }}
-                  formatter={(value: any) => [`${value}kg`, '体重']}
-                  labelFormatter={(daysAgo: any) => {
+                  formatter={(value) => [`${value}kg`, '体重']}
+                  labelFormatter={(label) => {
+                    // Recharts 把 label 声明成 ReactNode，这里实际是 X 轴的数值
+                    const daysAgo = Number(label)
                     const item = weightData.find(d => d.daysAgo === daysAgo)
                     return `${item?.label ?? ''} (${daysAgo === 0 ? '今天' : `${daysAgo}天前`})`
                   }}

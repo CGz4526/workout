@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Play, Trash2, X, Minus, Plus as PlusIcon, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type TemplateItem } from '../types'
+import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type ExerciseRecord, type TemplateItem } from '../types'
 import Header from '../components/Header'
 import { type CountField, stepItemCount } from '../lib/template'
 
@@ -70,7 +70,7 @@ export default function PreWorkout() {
       templateName: '自由训练',
       date: new Date().toISOString(),
       duration: 0,
-      exercises: [] as any[],
+      exercises: [] as ExerciseRecord[],
       finished: false,
       startTime: Date.now(),
     }

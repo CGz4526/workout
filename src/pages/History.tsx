@@ -5,6 +5,25 @@ import { Clock, ChevronRight, Calendar, Image, Trash2, Plus, Database, Play, Cof
 import { db } from '../db'
 import Header from '../components/Header'
 
+// 把「恢复一条已结束的记录」的写库逻辑放在组件外：
+// 它不依赖任何 state，属于业务逻辑而不是渲染逻辑；而且 react-hooks/purity
+// 会把组件体内函数里的 Date.now() 当成渲染期调用，挪出来这个问题自然消失。
+// 返回结果而不是直接 alert/navigate，导航与提示留给调用方。
+type ResumeResult = 'busy' | 'missing' | 'ok'
+
+async function resumeSession(id: string): Promise<ResumeResult> {
+  const existing = await db.sessions.filter((s) => !s.finished).first()
+  if (existing) return 'busy'
+  const session = await db.sessions.get(id)
+  if (!session) return 'missing'
+  // 把 startTime 往前挪「已记录的时长」，这样重新开始后计时器从原时长接着走
+  await db.sessions.update(id, {
+    finished: false,
+    startTime: Date.now() - session.duration * 1000,
+  })
+  return 'ok'
+}
+
 function SwipeableItem({ onDelete, onContinue, onClick, children }: { onDelete: () => void; onContinue?: () => void; onClick: () => void; children: React.ReactNode }) {
   const [offsetLeft, setOffsetLeft] = useState(0)
   const startX = useRef(0)
@@ -149,19 +168,12 @@ export default function History() {
   }
 
   const handleContinue = async (id: string) => {
-    const existing = await db.sessions.filter((s) => !s.finished).first()
-    if (existing) {
+    const result = await resumeSession(id)
+    if (result === 'busy') {
       alert('已有进行中的训练，请先结束当前训练')
       return
     }
-    const session = await db.sessions.get(id)
-    if (session) {
-      await db.sessions.update(id, {
-        finished: false,
-        startTime: Date.now() - session.duration * 1000,
-      })
-      navigate(`/session/${id}`)
-    }
+    if (result === 'ok') navigate(`/session/${id}`)
   }
 
   const grouped: Record<string, typeof sessions> = {}

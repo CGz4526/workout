@@ -29,6 +29,12 @@ function formatPrevSets(sets: SetRecord[]) {
   return sets.length > 3 ? `${shown} +${sets.length - 3}` : shown
 }
 
+// 秒 → 「分钟」输入框的初值。向下取整，和 SessionDetail 的编辑口径保持一致
+// （那边也是 Math.floor(s.duration / 60)）。0 秒表示「时长未知」，显示成空。
+function secondsToMinutesInput(seconds: number): string {
+  return Number.isFinite(seconds) && seconds > 0 ? String(Math.floor(seconds / 60)) : ''
+}
+
 // 把模板动作铺成训练记录。
 // defaultSets 有两个不受源码控制的来源（备份导入、sessionStorage 的 preset），
 // 所以必须先用 sanitizeItem 夹住再 Array.from——一个坏掉的备份里出现
@@ -57,12 +63,18 @@ export default function ActiveWorkout() {
   const [showSummary, setShowSummary] = useState(false)
   // 训练不足 1 分钟被丢弃时，记下时长用来给用户一个说明页（而不是静默跳走）
   const [discardedSeconds, setDiscardedSeconds] = useState<number | null>(null)
-  const [, setDisplayTick] = useState(0) // triggers re-render for timer display
+  // 当前时间戳，每秒由下面的 interval 推进一次。
+  // 用它而不是在 render 里直接 Date.now()：render 必须是纯函数
+  // （react-hooks/purity），而且并发渲染下每次重渲染取到的时间会漂移。
+  const [now, setNow] = useState(() => Date.now())
   const [finalElapsed, setFinalElapsed] = useState(0)
   const timerRef = useRef<number | null>(null)
 
   const [restEndTime, setRestEndTime] = useState<number | null>(null)
   const [distance, setDistance] = useState<string>('')
+  // 有氧结束后允许修正时长。存的是「分钟」字符串，和 SessionDetail 的编辑口径一致；
+  // 落库时再换算成秒。
+  const [durationInput, setDurationInput] = useState<string>('')
   const [loaded, setLoaded] = useState(false)
   const restTimerRef = useRef<number | null>(null)
   const initializedForRef = useRef<string | null>(null)
@@ -80,11 +92,11 @@ export default function ActiveWorkout() {
   const elapsed = finished
     ? finalElapsed
     : session?.startTime
-      ? Math.floor((Date.now() - session.startTime) / 1000)
+      ? Math.floor((now - session.startTime) / 1000)
       : 0
 
   // Calculate rest remaining from end time
-  const restRemaining = restEndTime ? Math.max(0, Math.ceil((restEndTime - Date.now()) / 1000)) : 0
+  const restRemaining = restEndTime ? Math.max(0, Math.ceil((restEndTime - now) / 1000)) : 0
 
   // Debounced save exercises to DB
   const saveTimeoutRef = useRef<number | null>(null)
@@ -100,6 +112,14 @@ export default function ActiveWorkout() {
   }, [sessionId])
 
   // Init from session (runs once per session)
+  //
+  // 关于 react-hooks/set-state-in-effect：这里是「把异步加载到的外部数据（Dexie）
+  // 一次性播种成本地可编辑 state」，属于该规则明确允许的「与外部系统同步」场景——
+  // 不能用 useLiveQuery 订阅，否则用户正在编辑时会被库里的旧值覆盖。
+  // 代价只是挂载时多一次渲染，可接受。
+  // 真正的修法是把组件拆成「加载器 + 内层」并用 key={sessionId} 重挂载，
+  // 但那会牵动 initializedForRef / loaded / 防抖保存三者的耦合，风险不划算。
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!session || initializedForRef.current === sessionId) return
     initializedForRef.current = sessionId ?? null
@@ -107,6 +127,11 @@ export default function ActiveWorkout() {
     if (session.finished) {
       setExercises(session.exercises)
       setFinalElapsed(session.duration)
+      // 有氧的时长/距离在总结页是可编辑的，所以要把库里已有的值回填进输入框。
+      // 之前只回填了 exercises，重开一条已结束的有氧记录时距离框是空的——
+      // 明明存了 5km 却显示空白。
+      setDurationInput(secondsToMinutesInput(session.duration))
+      setDistance(session.distance != null ? String(session.distance) : '')
       setFinished(true)
       setShowSummary(true)
       setLoaded(true)
@@ -144,12 +169,13 @@ export default function ActiveWorkout() {
       setRestEndTime(session.restEndTime)
     }
   }, [session, sessionId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Display tick: re-render every second so elapsed updates
   useEffect(() => {
     if (finished) return
     timerRef.current = window.setInterval(() => {
-      setDisplayTick((t) => t + 1)
+      setNow(Date.now())
     }, 1000)
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
@@ -160,8 +186,9 @@ export default function ActiveWorkout() {
   useEffect(() => {
     if (!restEndTime || restRemaining <= 0) return
     restTimerRef.current = window.setInterval(() => {
-      setDisplayTick((t) => t + 1) // trigger re-render to recalculate
-      if (Date.now() >= restEndTime) {
+      const t = Date.now()
+      setNow(t) // trigger re-render to recalculate
+      if (t >= restEndTime) {
         // 后台标签页的定时器会被节流，所以这里可能在超时后才第一次命中——
         // 那也照样提醒（用户刚回到页面时正需要这个提示）。
         if (restAlertedRef.current !== restEndTime) {
@@ -366,6 +393,7 @@ export default function ActiveWorkout() {
     }
 
     setFinalElapsed(duration)
+    setDurationInput(secondsToMinutesInput(duration))
     await db.sessions.update(sessionId, {
       exercises,
       duration,
@@ -375,6 +403,23 @@ export default function ActiveWorkout() {
     })
     setFinished(true)
     setShowSummary(true)
+  }
+
+  // 有氧结束后修正时长 / 距离。时长输入的是分钟，落库换算成秒。
+  // 空值或非正数一律当作「时长未知」存 0，和 AddSession 的口径一致。
+  const saveAerobicField = async (field: 'duration' | 'distance', raw: string) => {
+    if (!sessionId) return
+    if (field === 'duration') {
+      const minutes = Number(raw)
+      await db.sessions.update(sessionId, {
+        duration: Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 0,
+      })
+      return
+    }
+    const km = Number(raw)
+    await db.sessions.update(sessionId, {
+      distance: raw && Number.isFinite(km) ? km : undefined,
+    })
   }
 
   // 太短被丢弃时给一个明确的说明页——静默跳回首页会让用户以为已经存上了。
@@ -444,7 +489,23 @@ export default function ActiveWorkout() {
               <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                 <Clock size={18} className="text-accent-light" />
               </div>
-              <p className="text-primary text-lg font-bold font-mono">{formatTime(elapsed)}</p>
+              {isAerobic ? (
+                <div className="flex items-center justify-center gap-1">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={durationInput}
+                    onChange={(e) => setDurationInput(e.target.value)}
+                    onBlur={() => saveAerobicField('duration', durationInput)}
+                    placeholder="0"
+                    className="w-16 bg-surface-2 text-primary text-center py-1 rounded-lg text-lg font-bold outline-none border border-border font-mono placeholder:text-muted"
+                  />
+                  <span className="text-muted text-xs">分</span>
+                </div>
+              ) : (
+                <p className="text-primary text-lg font-bold font-mono">{formatTime(elapsed)}</p>
+              )}
               <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">时长</p>
             </div>
             {isAerobic ? (
@@ -455,15 +516,10 @@ export default function ActiveWorkout() {
                 <div className="flex items-center justify-center gap-1">
                   <input
                     type="number"
+                    inputMode="decimal"
                     value={distance}
                     onChange={(e) => setDistance(e.target.value)}
-                    onBlur={async () => {
-                      if (sessionId) {
-                        await db.sessions.update(sessionId, {
-                          distance: distance ? Number(distance) : undefined,
-                        })
-                      }
-                    }}
+                    onBlur={() => saveAerobicField('distance', distance)}
                     placeholder="0"
                     step="0.1"
                     className="w-16 bg-surface-2 text-primary text-center py-1 rounded-lg text-lg font-bold outline-none border border-border font-mono placeholder:text-muted"

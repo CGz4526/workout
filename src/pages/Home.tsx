@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
 import { Play, Clock, Zap, ChevronRight, Shield, Heart, ArrowBigUp, Footprints, Target, Flame, Bike, Waves, Coffee } from 'lucide-react'
 import { db } from '../db'
+import type { ExerciseRecord } from '../types'
 import Header from '../components/Header'
 
 const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
@@ -13,6 +15,21 @@ const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType
   '三头': { gradient: 'from-teal-500 to-emerald-500',  icon: Zap },
   '核心': { gradient: 'from-yellow-500 to-orange-500', icon: Flame },
 }
+
+// 有氧入口。带 `choices` 的卡片点开后会先问「具体是哪一项」——
+// 爬楼梯和爬坡都属于爬升类训练，每次练的可能是任一种，不该在卡片上写死。
+// 存进记录的 templateName 是最终选中的那个名字，Stats 按类型统计也据此分组。
+const AEROBIC_ENTRIES: {
+  label: string
+  icon: React.ElementType
+  color: string
+  choices?: string[]
+}[] = [
+  { label: '跑步', icon: Bike, color: 'text-blue-400' },
+  { label: '游泳', icon: Waves, color: 'text-cyan-400' },
+  { label: '羽毛球', icon: Target, color: 'text-orange-400' },
+  { label: '爬楼梯/爬坡', icon: Footprints, color: 'text-purple-400', choices: ['爬楼梯', '爬坡'] },
+]
 
 const startAerobic = async (name: string, navigate: (path: string) => void) => {
   const existing = await db.sessions.filter((s) => !s.finished).first()
@@ -38,6 +55,8 @@ const startAerobic = async (name: string, navigate: (path: string) => void) => {
 
 export default function Home() {
   const navigate = useNavigate()
+  // 非空时弹出「这次是爬楼梯还是爬坡」的选择层
+  const [choosingAerobic, setChoosingAerobic] = useState<{ label: string; choices?: string[] } | null>(null)
   const templates = useLiveQuery(() => db.templates.toArray()) ?? []
   const activeSession = useLiveQuery(() =>
     db.sessions.filter((s) => !s.finished).first()
@@ -109,34 +128,18 @@ export default function Home() {
             </button>
 
             <div className="grid grid-cols-2 gap-2.5 mb-3">
-              <button
-                onClick={() => startAerobic('跑步', navigate)}
-                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
-              >
-                <Bike size={18} className="text-blue-400" />
-                <span className="text-primary text-sm font-medium">跑步</span>
-              </button>
-              <button
-                onClick={() => startAerobic('游泳', navigate)}
-                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
-              >
-                <Waves size={18} className="text-cyan-400" />
-                <span className="text-primary text-sm font-medium">游泳</span>
-              </button>
-              <button
-                onClick={() => startAerobic('羽毛球', navigate)}
-                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
-              >
-                <Target size={18} className="text-orange-400" />
-                <span className="text-primary text-sm font-medium">羽毛球</span>
-              </button>
-              <button
-                onClick={() => startAerobic('爬楼梯', navigate)}
-                className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
-              >
-                <Footprints size={18} className="text-purple-400" />
-                <span className="text-primary text-sm font-medium">爬楼梯</span>
-              </button>
+              {AEROBIC_ENTRIES.map((entry) => (
+                <button
+                  key={entry.label}
+                  onClick={() =>
+                    entry.choices ? setChoosingAerobic(entry) : startAerobic(entry.label, navigate)
+                  }
+                  className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
+                >
+                  <entry.icon size={18} className={entry.color} />
+                  <span className="text-primary text-sm font-medium">{entry.label}</span>
+                </button>
+              ))}
             </div>
 
             <button
@@ -151,7 +154,7 @@ export default function Home() {
                   templateName: '休息日',
                   date: new Date().toISOString(),
                   duration: 0,
-                  exercises: [] as any[],
+                  exercises: [] as ExerciseRecord[],
                   finished: true,
                 }
                 await db.sessions.add(session)
@@ -251,6 +254,41 @@ export default function Home() {
           </section>
         )}
       </div>
+
+      {/* 「爬楼梯 / 爬坡」二选一。点遮罩或取消都不开始训练。 */}
+      {choosingAerobic && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          onClick={() => setChoosingAerobic(null)}
+        >
+          <div
+            className="w-full max-w-sm bg-surface-1 rounded-t-3xl border-t border-border px-4 pt-5 pb-8 animate-scale-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-primary font-semibold text-sm mb-3">这次练的是哪一种？</p>
+            <div className="space-y-2">
+              {(choosingAerobic.choices ?? []).map((name) => (
+                <button
+                  key={name}
+                  onClick={() => {
+                    setChoosingAerobic(null)
+                    startAerobic(name, navigate)
+                  }}
+                  className="w-full py-3.5 bg-surface-2 rounded-2xl text-primary text-sm font-medium active:bg-surface-3 transition-colors"
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setChoosingAerobic(null)}
+              className="w-full mt-3 py-3 text-secondary text-sm active:text-primary transition-colors"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
