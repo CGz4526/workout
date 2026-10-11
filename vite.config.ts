@@ -21,8 +21,10 @@ export default defineConfig(() => {
           name: '健身记录',
           short_name: '健身记录',
           description: '个人健身训练记录工具',
-          theme_color: '#18181b',
-          background_color: '#18181b',
+          // 与 index.html 的 <meta name="theme-color"> 保持一致：
+          // 默认按浅色主题，深色主题下由 index.html 的内联脚本改写。
+          theme_color: '#f4f5f7',
+          background_color: '#f4f5f7',
           display: 'standalone',
           start_url: base,
           scope: base,

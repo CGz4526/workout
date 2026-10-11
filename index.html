@@ -4,18 +4,27 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#18181b" />
+    <meta name="theme-color" content="#f4f5f7" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>健身记录</title>
     <script>
       ;(function () {
         var t = localStorage.getItem('theme')
-        if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        var dark = t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) {
           document.documentElement.classList.add('dark')
         }
+        // theme-color 必须跟着主题走：写死一个值的话，浏览器状态栏/工具栏的底色
+        // 总会和当前页面差一档。取值与 --color-surface-0 保持一致。
+        // 内联在这里是为了在首次绘制前就定好，避免闪一下再变色。
+        var meta = document.querySelector('meta[name="theme-color"]')
+        if (meta) meta.setAttribute('content', dark ? '#0a0a0c' : '#f4f5f7')
       })()
-      // Restore deep links that 404.html redirected into the ?/ query string
+      // 深链回退：这段只在由 GitHub Pages 的 404.html 跳转过来（URL 形如 /?/history）时
+      // 才有作用。当前部署目标是 Cloudflare Pages（走 SPA 回退），仓库里**没有**
+      // public/404.html，所以这段是空转的。保留是为了将来切回 GH Pages 时不必重写；
+      // 若确认不再回 GH Pages，可连同它一起删掉。
       ;(function () {
         var l = window.location
         if (l.search[1] === '/') {
