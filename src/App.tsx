@@ -17,20 +17,23 @@ function AppLayout() {
   const isWorkout = location.pathname.startsWith('/session/')
 
   return (
-    <div className="min-h-screen bg-zinc-950">
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/exercises" element={<Exercises />} />
-        <Route path="/templates" element={<Templates />} />
-        <Route path="/template/:templateId" element={<TemplateDetail />} />
-        <Route path="/pre-workout" element={<PreWorkout />} />
-        <Route path="/session/:sessionId" element={<ActiveWorkout />} />
-        <Route path="/session-detail/:sessionId" element={<SessionDetail />} />
-        <Route path="/add-session" element={<AddSession />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/stats" element={<Stats />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+    <div className="min-h-screen bg-surface-0">
+      {/* 所有页面共用一个 max-w-lg 的内容列，桌面宽屏下不会拉成一条长线 */}
+      <main className="mx-auto w-full max-w-lg">
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/exercises" element={<Exercises />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="/template/:templateId" element={<TemplateDetail />} />
+          <Route path="/pre-workout" element={<PreWorkout />} />
+          <Route path="/session/:sessionId" element={<ActiveWorkout />} />
+          <Route path="/session-detail/:sessionId" element={<SessionDetail />} />
+          <Route path="/add-session" element={<AddSession />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/stats" element={<Stats />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </main>
       {!isWorkout && <BottomNav />}
     </div>
   )

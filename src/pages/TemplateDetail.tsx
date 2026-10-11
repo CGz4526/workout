@@ -1,20 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Shield, Heart, ArrowBigUp, Footprints, Target, Zap, Flame, Plus, X, Check, GripVertical } from 'lucide-react'
+import { Play, Plus, X, Check, GripVertical } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
-
-const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
-  '肩':   { gradient: 'from-orange-500 to-amber-500', icon: Shield },
-  '胸':   { gradient: 'from-red-500 to-rose-500',     icon: Heart },
-  '背':   { gradient: 'from-blue-500 to-cyan-500',    icon: ArrowBigUp },
-  '腿':   { gradient: 'from-purple-500 to-violet-500', icon: Footprints },
-  '二头': { gradient: 'from-pink-500 to-fuchsia-500',  icon: Target },
-  '三头': { gradient: 'from-teal-500 to-emerald-500',  icon: Zap },
-  '核心': { gradient: 'from-yellow-500 to-orange-500', icon: Flame },
-}
+import { bodyPartMeta } from '../lib/bodyParts'
 
 // 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
 type DragMeta = {
@@ -243,7 +234,7 @@ export default function TemplateDetail() {
     if (ex) bodyPartCounts[ex.bodyPart] = (bodyPartCounts[ex.bodyPart] || 0) + 1
   }
   const bp = Object.entries(bodyPartCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '肩'
-  const meta = BODY_PART_META[bp] ?? BODY_PART_META['肩']
+  const meta = bodyPartMeta(bp)
   const Icon = meta.icon
 
   return (
@@ -261,15 +252,18 @@ export default function TemplateDetail() {
         }
       />
 
-      <div className="px-4 pt-5">
+      <div className="mx-auto max-w-lg px-4 pt-5">
         {/* Hero */}
-        <div className="flex items-center gap-4 animate-fade-in">
-          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shadow-lg shadow-black/25 shrink-0`}>
+        <div className="flex items-center gap-4 animate-rise-in">
+          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shadow-md shadow-black/10 shrink-0`}>
             <Icon size={26} className="text-white" />
           </div>
           <div className="min-w-0">
             <h2 className="text-xl font-bold text-primary truncate">{template.name}</h2>
-            <p className="text-secondary text-sm mt-0.5">{items.length} 个动作</p>
+            <p className="text-secondary text-sm mt-1 flex items-center gap-2">
+              <span>{items.length} 个动作</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${meta.soft} ${meta.text} ${meta.border}`}>{bp}</span>
+            </p>
           </div>
         </div>
 
@@ -283,6 +277,7 @@ export default function TemplateDetail() {
         <div ref={listRef} className={`space-y-2 ${drag ? 'select-none' : ''}`}>
           {items.map((item, idx) => {
             const ex = exerciseById.get(item.exerciseId)
+            const exMeta = ex ? bodyPartMeta(ex.bodyPart) : null
             const isDragging = drag?.index === idx
             // 起点与目标槽位之间的行让位：整体上移或下移一格。
             let shift = 0
@@ -298,8 +293,8 @@ export default function TemplateDetail() {
                 data-row
                 className={`rounded-xl border ${
                   isDragging
-                    ? 'bg-surface-2 border-accent/40 shadow-lg shadow-black/25'
-                    : 'bg-surface-1 border-border'
+                    ? 'bg-surface-2 border-accent/40 shadow-raised'
+                    : 'bg-surface-1 border-border shadow-card'
                 }`}
                 style={{
                   // 拖拽用 transform，不动布局，所以量到的行位置在整个拖动过程中都成立
@@ -312,7 +307,7 @@ export default function TemplateDetail() {
                 {/* 入场动画放在内层：animate-fade-in 的 fill-mode 会一直占着
                     transform，放在外层会把拖拽的 translateY 顶掉 */}
                 <div
-                  className="flex items-center gap-2 pl-2 pr-1.5 py-3 animate-fade-in"
+                  className="flex items-center gap-2 pl-2 pr-1.5 py-3 animate-pop-in"
                   style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
                 >
                   <button
@@ -330,9 +325,9 @@ export default function TemplateDetail() {
                   </button>
                   <span className="w-5 text-center text-xs font-mono text-muted shrink-0">{shownIdx + 1}</span>
                   <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
-                  {ex && (
-                    <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-accent/10 text-accent-light border border-accent/15">
-                      {ex.bodyPart}
+                  {exMeta && (
+                    <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${exMeta.soft} ${exMeta.text} ${exMeta.border}`}>
+                      {ex!.bodyPart}
                     </span>
                   )}
                   <button
@@ -356,7 +351,7 @@ export default function TemplateDetail() {
 
           <button
             onClick={() => setSelectingExercise(true)}
-            className="w-full flex items-center justify-center gap-1.5 py-3.5 border border-dashed border-surface-3 rounded-xl text-secondary text-sm active:bg-surface-1 transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-3.5 border border-dashed border-surface-3 rounded-xl text-secondary text-sm active:bg-surface-1 transition-colors tap-soft"
           >
             <Plus size={16} />
             添加动作
@@ -369,11 +364,11 @@ export default function TemplateDetail() {
         </div>
       </div>
 
-      <div className="fixed bottom-16 left-0 right-0 px-4 py-3 bg-surface-0/85 backdrop-blur-xl border-t border-border">
+      <div className="fixed bottom-16 left-0 right-0 z-40 mx-auto max-w-lg px-4 py-3 bg-surface-0/85 backdrop-blur-xl border-t border-border">
         <button
           onClick={startWorkout}
           disabled={starting || items.length === 0}
-          className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:shadow-none flex items-center justify-center gap-2"
+          className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-2xl transition-all duration-200 shadow-glow tap disabled:shadow-none flex items-center justify-center gap-2"
         >
           <Play size={18} fill="currentColor" />
           {starting ? '启动中...' : '开始训练'}
@@ -381,15 +376,15 @@ export default function TemplateDetail() {
       </div>
 
       {selectingExercise && (
-        <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-scale-in">
-          <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
+        <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-fade-in">
+          <div className="mx-auto flex w-full max-w-lg items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
             <h3 className="text-primary font-semibold">选择动作</h3>
             <button onClick={() => { setSelectingExercise(false); setCustomName('') }} className="p-1.5 rounded-lg active:bg-surface-2">
               <X size={22} className="text-secondary" />
             </button>
           </div>
 
-          <div className="px-4 py-3 border-b border-border">
+          <div className="mx-auto w-full max-w-lg px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2">
               <input
                 value={customName}
@@ -408,7 +403,7 @@ export default function TemplateDetail() {
             </div>
           </div>
 
-          <div className="flex overflow-x-auto gap-2 px-4 py-3 border-b border-border no-scrollbar">
+          <div className="mx-auto flex w-full max-w-lg overflow-x-auto gap-2 px-4 py-3 border-b border-border no-scrollbar">
             {BODY_PARTS.map((b) => (
               <button
                 key={b}
@@ -424,17 +419,23 @@ export default function TemplateDetail() {
             ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          <div className="mx-auto w-full max-w-lg flex-1 overflow-y-auto px-4 py-3">
             {filteredExercises.map((ex) => {
               const disabled = items.some((i) => i.exerciseId === ex.id)
+              const m = bodyPartMeta(ex.bodyPart)
+              const ExIcon = m.icon
               return (
                 <button
                   key={ex.id}
                   onClick={() => addExercise(ex.id, ex.name)}
                   disabled={disabled}
-                  className="w-full text-left p-4 bg-surface-1 rounded-2xl mb-2 disabled:opacity-30 active:bg-surface-2 border border-border transition-all"
+                  className="w-full flex items-center gap-3 text-left p-3.5 bg-surface-1 rounded-2xl mb-2 disabled:opacity-30 active:bg-surface-2 border border-border shadow-card tap-soft"
                 >
-                  <span className="text-primary text-sm font-medium">{ex.name}</span>
+                  <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${m.soft}`}>
+                    <ExIcon size={15} className={m.text} />
+                  </span>
+                  <span className="text-primary text-sm font-medium flex-1">{ex.name}</span>
+                  {disabled && <Check size={15} className="text-accent" />}
                 </button>
               )
             })}

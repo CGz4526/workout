@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Clock, ChevronRight, Calendar, Image, Trash2, Plus, Database, Play, Coffee } from 'lucide-react'
+import { ChevronRight, Calendar, Image, Trash2, Plus, Database, Play, Coffee, Dumbbell, Route } from 'lucide-react'
 import { db } from '../db'
 import Header from '../components/Header'
+import { bodyPartMeta } from '../lib/bodyParts'
+import { normalizeSession } from '../lib/session'
 
 // 把「恢复一条已结束的记录」的写库逻辑放在组件外：
 // 它不依赖任何 state，属于业务逻辑而不是渲染逻辑；而且 react-hooks/purity
@@ -92,7 +94,7 @@ function SwipeableItem({ onDelete, onContinue, onClick, children }: { onDelete: 
 
       {/* Main content */}
       <div
-        className="relative bg-surface-1 border border-border transition-transform"
+        className="relative bg-surface-1 transition-transform"
         style={{ transform: `translateX(${offsetLeft}px)` }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -110,7 +112,7 @@ export default function History() {
   const sessions =
     useLiveQuery(() =>
       db.sessions.orderBy('date').reverse().toArray().then(
-        (all) => all.filter((s) => s.finished)
+        (all) => all.filter((s) => s.finished).map(normalizeSession)
       )
     ) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
@@ -218,7 +220,7 @@ export default function History() {
         }
       />
 
-      <div className="px-4 py-3">
+      <div className="mx-auto w-full max-w-lg px-4 py-3">
         {Object.keys(grouped).length === 0 ? (
           <div className="text-center py-16">
             <div className="w-14 h-14 rounded-2xl bg-surface-1 border border-border flex items-center justify-center mx-auto mb-4">
@@ -247,20 +249,32 @@ export default function History() {
                   const photoCount = s.photos?.length ?? 0
                   const startTime = new Date(s.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
                   const bodyParts = getBodyParts(s)
-                  const cardBg = isRest ? 'bg-stone-500/5' : isAerobic ? 'bg-blue-500/5' : 'border-zinc-700 border'
-                  const iconBg = isRest ? 'bg-stone-400/10' : isAerobic ? 'bg-blue-400/10' : 'bg-accent/10'
-                  const iconColor = isRest ? 'text-stone-400' : isAerobic ? 'text-blue-400' : 'text-accent-light'
+                  // 左侧色带区分训练类型：力量=主色、有氧=蓝、休息日=中性灰。
+                  // 原来力量卡片写死 border-zinc-700，浅色主题下是一条突兀的深色边。
+                  const band = isRest
+                    ? 'bg-gradient-to-b from-stone-400 to-stone-500'
+                    : isAerobic
+                      ? 'bg-gradient-to-b from-blue-500 to-cyan-500'
+                      : 'bg-gradient-to-b from-emerald-600 to-emerald-500'
+                  const iconBg = isRest ? 'bg-stone-500/10' : isAerobic ? 'bg-blue-500/10' : 'bg-accent-soft'
+                  const iconColor = isRest
+                    ? 'text-stone-500 dark:text-stone-400'
+                    : isAerobic
+                      ? 'text-blue-500 dark:text-blue-400'
+                      : 'text-accent'
+                  const RowIcon = isRest ? Coffee : isAerobic ? Route : Dumbbell
                   return (
-                    <div className={`rounded-2xl overflow-hidden ${cardBg}`}>
+                    <div className="rounded-2xl overflow-hidden border border-border shadow-card">
                     <SwipeableItem
                       key={s.id}
                       onDelete={() => handleDelete(s.id)}
                       onContinue={isRest ? undefined : () => handleContinue(s.id)}
                       onClick={() => navigate(`/session-detail/${s.id}`)}
                     >
-                      <div className="flex items-center gap-3.5 p-4">
+                      <div className="relative flex items-center gap-3.5 p-4 pl-5">
+                        <span className={`absolute left-0 top-0 bottom-0 w-1.5 ${band}`} />
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
-                          {isRest ? <Coffee size={18} className={iconColor} /> : <Clock size={18} className={iconColor} />}
+                          <RowIcon size={18} className={iconColor} />
                         </div>
                         <div className="flex-1 text-left min-w-0">
                           <p className="font-semibold text-sm flex items-center justify-between">
@@ -270,41 +284,48 @@ export default function History() {
                             </span>
                             {s.weight && <span className="text-muted text-xs font-normal shrink-0 ml-2">体重：{s.weight}kg</span>}
                           </p>
-                          <p className="text-muted text-xs mt-0.5 flex items-center justify-between">
-                            <span className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-                              {isAerobic && s.distance ? (
-                                `${s.distance}km`
-                              ) : !isRest && !isAerobic ? (
-                                <>
-                                  {s.exercises.length} 动作 · {completedSets} 组
-                                  {photoCount > 0 && (
-                                    <span className="inline-flex items-center gap-0.5">
-                                      <Image size={10} />
-                                      {photoCount}
-                                    </span>
-                                  )}
-                                </>
-                              ) : null}
-                              {bodyParts && bodyParts.map((part, idx) => (
-                                <span key={part} className={`text-[10px] px-1.5 py-0.5 rounded-md bg-accent/10 text-accent-light border border-accent/10 shrink-0 ${idx >= 3 ? 'hidden' : ''}`}>{part}</span>
-                              ))}
-                              {bodyParts && bodyParts.length > 3 && (
-                                <span className="text-[10px] text-muted shrink-0">+{bodyParts.length - 3}</span>
-                              )}
-                            </span>
-                            {s.diet && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${
-                                s.diet === 'low' ? 'bg-emerald-500/20 text-emerald-400' :
-                                s.diet === 'mid' ? 'bg-amber-500/20 text-amber-400' :
-                                s.diet === 'high' ? 'bg-orange-600/20 text-orange-500' :
-                                'bg-red-500/20 text-red-400'
-                              }`}>
-                                {s.diet === 'low' ? '低碳' : s.diet === 'mid' ? '中碳' : s.diet === 'high' ? '高碳' : '放纵餐'}
+                          <div className="mt-1">
+                            <p className="text-muted text-xs flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-1.5 min-w-0">
+                                {isAerobic && s.distance ? (
+                                  <span className="truncate">{s.distance}km</span>
+                                ) : !isRest && !isAerobic ? (
+                                  <>
+                                    <span className="truncate">{s.exercises.length} 动作 · {completedSets} 组</span>
+                                    {photoCount > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 shrink-0">
+                                        <Image size={10} />
+                                        {photoCount}
+                                      </span>
+                                    )}
+                                  </>
+                                ) : null}
                               </span>
+                              {s.diet && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${
+                                  s.diet === 'low' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                                  s.diet === 'mid' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                                  s.diet === 'high' ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400' :
+                                  'bg-red-500/15 text-red-600 dark:text-red-400'
+                                }`}>
+                                  {s.diet === 'low' ? '低碳' : s.diet === 'mid' ? '中碳' : s.diet === 'high' ? '高碳' : '放纵餐'}
+                                </span>
+                              )}
+                            </p>
+                            {/* 部位标签单独一行并允许换行：挤在上一行会被 overflow-hidden 裁掉半截 */}
+                            {bodyParts && bodyParts.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {bodyParts.map((part) => {
+                                  const m = bodyPartMeta(part)
+                                  return (
+                                    <span key={part} className={`text-[10px] px-1.5 py-0.5 rounded-md border ${m.soft} ${m.text} ${m.border}`}>{part}</span>
+                                  )
+                                })}
+                              </div>
                             )}
-                          </p>
+                          </div>
                         </div>
-                        <ChevronRight size={18} className="text-surface-3 shrink-0" />
+                        <ChevronRight size={18} className="text-muted shrink-0" />
                       </div>
                     </SwipeableItem>
                     </div>

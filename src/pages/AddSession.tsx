@@ -6,6 +6,7 @@ import { db } from '../db'
 import { BODY_PARTS, type BodyPart, type ExerciseRecord } from '../types'
 import { isTooShortToRecord } from '../lib/session'
 import Header from '../components/Header'
+import { bodyPartMeta } from '../lib/bodyParts'
 
 const toLocalInput = (d: Date) => {
   const pad = (n: number) => n.toString().padStart(2, '0')
@@ -112,9 +113,9 @@ export default function AddSession() {
     <div className="min-h-screen bg-surface-0 pb-24">
       <Header title="添加记录" showBack />
 
-      <div className="px-4 py-4 space-y-4">
+      <div className="mx-auto w-full max-w-lg px-4 py-4 space-y-4">
         {/* Basic info */}
-        <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
           <div className="space-y-3">
             <div>
               <label className="text-muted text-xs mb-1.5 block">训练名称</label>
@@ -148,7 +149,7 @@ export default function AddSession() {
         </div>
 
         {/* Exercises */}
-        <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
           <h3 className="text-primary font-semibold text-sm mb-3">训练动作</h3>
 
           {exercises.length === 0 ? (
@@ -214,7 +215,7 @@ export default function AddSession() {
         <button
           onClick={handleSave}
           disabled={exercises.length === 0}
-          className="w-full py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 disabled:shadow-none"
+          className="w-full py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 disabled:from-surface-2 disabled:to-surface-2 disabled:text-muted text-white font-semibold rounded-2xl transition-all duration-200 shadow-glow tap disabled:shadow-none"
         >
           保存记录
         </button>
@@ -222,7 +223,8 @@ export default function AddSession() {
 
       {/* Exercise selector */}
       {selectingExercise && (
-        <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-surface-0 flex justify-center animate-fade-in">
+          <div className="flex h-full w-full max-w-lg flex-col">
           <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
             <h3 className="text-primary font-semibold">选择动作</h3>
             <button onClick={() => { setSelectingExercise(false); setCustomName('') }} className="p-1.5 rounded-lg active:bg-surface-2">
@@ -266,15 +268,24 @@ export default function AddSession() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3">
-            {filteredExercises.map((ex) => (
-              <button
-                key={ex.id}
-                onClick={() => addExercise(ex.id, ex.name)}
-                className="w-full text-left p-4 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border transition-all"
-              >
-                <span className="text-primary text-sm font-medium">{ex.name}</span>
-              </button>
-            ))}
+            {filteredExercises.map((ex, idx) => {
+              const m = bodyPartMeta(ex.bodyPart)
+              const ExIcon = m.icon
+              return (
+                <button
+                  key={ex.id}
+                  onClick={() => addExercise(ex.id, ex.name)}
+                  className="w-full flex items-center gap-3 text-left p-3.5 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border shadow-card tap-soft animate-pop-in"
+                  style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
+                >
+                  <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${m.soft}`}>
+                    <ExIcon size={15} className={m.text} />
+                  </span>
+                  <span className="text-primary text-sm font-medium flex-1">{ex.name}</span>
+                </button>
+              )
+            })}
+          </div>
           </div>
         </div>
       )}

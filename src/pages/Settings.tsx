@@ -116,14 +116,14 @@ export default function Settings() {
     <div className="min-h-screen bg-surface-0 pb-20">
       <Header title="数据备份" showBack />
 
-      <div className="px-4 py-4 space-y-3">
+      <div className="mx-auto w-full max-w-lg px-4 py-4 space-y-3">
         {/* Export */}
         <button
           onClick={handleExport}
-          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-colors"
+          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border shadow-card active:bg-surface-2 transition-colors tap-soft"
         >
-          <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
-            <Download size={20} className="text-accent-light" />
+          <div className="w-10 h-10 rounded-xl bg-accent-soft flex items-center justify-center">
+            <Download size={20} className="text-accent" />
           </div>
           <div className="flex-1 text-left">
             <p className="text-primary font-semibold text-sm">导出数据</p>
@@ -134,10 +134,10 @@ export default function Settings() {
         {/* Import */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-colors"
+          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border shadow-card active:bg-surface-2 transition-colors tap-soft"
         >
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-            <Upload size={20} className="text-blue-400" />
+            <Upload size={20} className="text-blue-500 dark:text-blue-400" />
           </div>
           <div className="flex-1 text-left">
             <p className="text-primary font-semibold text-sm">导入数据</p>

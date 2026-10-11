@@ -1,28 +1,86 @@
 @import "tailwindcss";
 
+/* 主题走的是 <html class="dark">（不是 prefers-color-scheme），
+   所以要让 dark: 变体跟着这个类走，否则 dark: 工具类永远不生效。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
-  --color-surface-0: #ffffff;
-  --color-surface-1: #f4f4f5;
-  --color-surface-2: #e4e4e7;
-  --color-surface-3: #d4d4d8;
-  --color-primary: #18181b;
-  --color-secondary: #71717a;
-  --color-muted: #a1a1aa;
-  --color-border: #e4e4e7;
+  /* ---- 表面层级 ----
+     浅色主题下：页面是淡灰底、卡片是白底，卡片因此天然「浮」在页面上。
+     之前是反过来的（灰卡片压在白页面上、没有阴影），这是整体「像线框」的主因。 */
+  --color-surface-0: #f4f5f7;   /* 页面底 */
+  --color-surface-1: #ffffff;   /* 卡片 */
+  --color-surface-2: #eef0f4;   /* 卡片内的次级填充 / 按下反馈 */
+  --color-surface-3: #e1e4ea;   /* 更强的填充 / 虚线边 */
+
+  --color-primary: #16181d;
+  --color-secondary: #6b7280;
+  --color-muted: #9ca3af;
+  --color-border: #e7e9ee;
+
   --color-accent: #10b981;
-  --color-accent-light: #34d399;
+  /* accent 的「用于前景文字/图标」档。浅色主题下必须够深，否则 #34d399 压在
+     白卡片上对比度只有 ~1.9:1，图标和小字都糊；深色主题再换回浅绿（见 :root.dark）。
+     它是全站图标/强调文字的主色，所以在这里改一处就能覆盖所有调用点。 */
+  --color-accent-light: #059669;
   --color-accent-dark: #059669;
+  /* accent 的淡底，用于图标底、选中态、标签 */
+  --color-accent-soft: rgba(16, 185, 129, 0.1);
+
+  /* ---- 阴影不放这里，见文件下方的 :root 块 ----
+     Tailwind 4 会把 @theme 里的值**内联**进工具类：
+       .shadow-card{--tw-shadow:0 1px 2px #1018280a, ...}
+     于是 :root.dark 里的同名变量永远不会被读到，深色主题会一直用浅色阴影
+     （浅色阴影压在深色背景上几乎看不见 = 完全没有层次）。
+     所以阴影改成普通 CSS 变量 + 自定义 @utility，工具类才真正引用变量。 */
+
+  /* ---- 圆角节奏 ----
+     不自定义令牌：直接沿用 Tailwind 内置刻度，卡片 = rounded-2xl(16px)、
+     卡内元素 = rounded-xl(12px)、全屏面板 = rounded-t-3xl(24px)。
+     之前定义的 --radius-card/-inner/-sheet 没有任何地方引用，是死令牌，已删。 */
+
+  /* ---- 缓动：全局用同一条曲线，动效才像「一套」 ---- */
+  --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* 阴影：浅色用冷灰（避免发脏发黄），深色要更黑更实（否则完全看不见）。
+   必须是普通变量，不能是 @theme 令牌——原因见上面的注释。 */
+:root {
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-raised: 0 4px 16px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow-glow: 0 6px 20px rgba(16, 185, 129, 0.28);
+}
+
+@utility shadow-card {
+  box-shadow: var(--shadow-card);
+}
+
+@utility shadow-raised {
+  box-shadow: var(--shadow-raised);
+}
+
+@utility shadow-glow {
+  box-shadow: var(--shadow-glow);
 }
 
 :root.dark {
-  --color-surface-0: #09090b;
-  --color-surface-1: #18181b;
-  --color-surface-2: #27272a;
-  --color-surface-3: #3f3f46;
-  --color-primary: #fafafa;
+  --color-surface-0: #0a0a0c;
+  --color-surface-1: #17181c;
+  --color-surface-2: #22242a;
+  --color-surface-3: #34373e;
+
+  --color-primary: #f4f4f5;
   --color-secondary: #a1a1aa;
-  --color-muted: #52525b;
-  --color-border: rgba(255, 255, 255, 0.06);
+  --color-muted: #6f7480;
+  --color-border: rgba(255, 255, 255, 0.07);
+
+  --color-accent-soft: rgba(16, 185, 129, 0.14);
+  --color-accent-light: #34d399;
+
+  /* 深色下阴影要更黑更实，否则完全看不见；同时靠极细的高光边补出轮廓 */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-raised: 0 6px 20px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 6px 22px rgba(16, 185, 129, 0.22);
 }
 
 @layer base {
@@ -53,6 +111,13 @@
   }
 }
 
+/* ================= 动效 =================
+   入场动画一律用 animation-fill-mode: backwards，不用 both。
+   both 会在动画结束后继续占着 transform，把元素自己的 :active 缩放、
+   内联 transform（比如拖拽调序的 translateY）全部顶掉——CSS 动画优先级
+   高于普通声明。backwards 只在动画开始前应用起始帧，结束就交还控制权，
+   入场效果完全一样但不会留下副作用。 */
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -61,6 +126,19 @@
 @keyframes scale-in {
   from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* 页面主区块入场：位移更大一点，做出「内容落下来」的层次 */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 列表项入场：带一点回弹，比纯位移更有精神 */
+@keyframes pop-in {
+  0% { opacity: 0; transform: translateY(10px) scale(0.97); }
+  60% { opacity: 1; transform: translateY(0) scale(1.005); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes pulse-glow {
@@ -74,12 +152,26 @@
   100% { transform: scale(1); }
 }
 
+/* 进度条/进度环的柔和高光扫过 */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
 @utility animate-fade-in {
-  animation: fade-in 0.3s ease-out both;
+  animation: fade-in 0.3s var(--ease-soft) backwards;
 }
 
 @utility animate-scale-in {
-  animation: scale-in 0.3s ease-out both;
+  animation: scale-in 0.28s var(--ease-soft) backwards;
+}
+
+@utility animate-rise-in {
+  animation: rise-in 0.42s var(--ease-soft) backwards;
+}
+
+@utility animate-pop-in {
+  animation: pop-in 0.36s var(--ease-soft) backwards;
 }
 
 @utility animate-pulse-glow {
@@ -87,5 +179,26 @@
 }
 
 @utility animate-check-pop {
-  animation: check-pop 0.3s ease-out;
+  animation: check-pop 0.3s var(--ease-soft);
+}
+
+@utility animate-shimmer {
+  animation: shimmer 1.8s var(--ease-soft) infinite;
+}
+
+/* 可点元素的统一按下反馈。只动 transform / background-color，
+   不写 transition-property: all，免得和元素自己的过渡打架。 */
+@utility tap {
+  transition: transform 0.16s var(--ease-soft), background-color 0.16s var(--ease-soft);
+  &:active {
+    transform: scale(0.975);
+  }
+}
+
+/* 更轻的一档，用于整块卡片（缩放幅度小一点，不然会晃） */
+@utility tap-soft {
+  transition: transform 0.18s var(--ease-soft), background-color 0.18s var(--ease-soft);
+  &:active {
+    transform: scale(0.988);
+  }
 }

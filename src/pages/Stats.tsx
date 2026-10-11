@@ -5,6 +5,8 @@ import { TrendingUp, Calendar, Activity, Dumbbell, ChevronLeft, ChevronRight, Ch
 import { db } from '../db'
 import { BODY_PARTS, type WorkoutSession } from '../types'
 import Header from '../components/Header'
+import { bodyPartMeta } from '../lib/bodyParts'
+import { normalizeSession } from '../lib/session'
 
 type TimeRange = '1w' | '1m' | '3m'
 
@@ -58,22 +60,12 @@ const sessionVolume = (s: WorkoutSession) =>
     0
   )
 
-const PART_COLORS: Record<string, string> = {
-  '肩': '#f59e0b',
-  '胸': '#ef4444',
-  '背': '#3b82f6',
-  '腿': '#8b5cf6',
-  '二头': '#ec4899',
-  '三头': '#14b8a6',
-  '核心': '#eab308',
-}
-
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 
 export default function Stats() {
   const sessions = useLiveQuery(() =>
     db.sessions.orderBy('date').reverse().toArray().then(
-      (all) => all.filter((s) => s.finished)
+      (all) => all.filter((s) => s.finished).map(normalizeSession)
     )
   ) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
@@ -184,7 +176,7 @@ export default function Stats() {
       }
     }
 
-    return BODY_PARTS.map(bp => ({ name: bp, count: counts[bp], fill: PART_COLORS[bp] })).filter(d => d.count > 0)
+    return BODY_PARTS.map(bp => ({ name: bp, count: counts[bp], fill: bodyPartMeta(bp).hex })).filter(d => d.count > 0)
   }, [strengthSessions, allExercises])
 
   // Aerobic stats
@@ -342,8 +334,9 @@ export default function Stats() {
     <div className="min-h-screen bg-surface-0 pb-20">
       <Header title="数据统计" />
 
+      <div className="mx-auto w-full max-w-lg">
       {/* Calendar heatmap */}
-      <div className="bg-surface-1 rounded-2xl p-4 border border-border mx-4 mt-4">
+      <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card mx-4 mt-4 animate-rise-in">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-primary font-semibold text-sm">训练日历</h3>
           <div className="flex items-center gap-1">
@@ -431,7 +424,7 @@ export default function Stats() {
       <div className="px-4 py-4 space-y-4">
         {/* Body part stats */}
         {bodyPartData.length > 0 && (
-          <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+          <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-rise-in">
             <div className="flex items-center gap-2 mb-4">
               <Dumbbell size={16} className="text-accent-light" />
               <h3 className="text-primary font-semibold text-sm">各部位训练次数</h3>
@@ -460,7 +453,7 @@ export default function Stats() {
         )}
 
         {/* Training frequency */}
-        <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-rise-in">
           <div className="flex items-center gap-2 mb-4">
             <Calendar size={16} className="text-accent-light" />
             <h3 className="text-primary font-semibold text-sm">{frequencyData.label}训练</h3>
@@ -485,7 +478,7 @@ export default function Stats() {
 
         {/* Training volume */}
         {volumeData.total > 0 && (
-          <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+          <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-rise-in">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <ChartColumn size={16} className="text-accent-light" />
@@ -519,7 +512,7 @@ export default function Stats() {
 
         {/* Aerobic stats */}
         {aerobicStats.total > 0 && (
-          <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+          <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-rise-in">
             <div className="flex items-center gap-2 mb-4">
               <Activity size={16} className="text-blue-400" />
               <h3 className="text-primary font-semibold text-sm">有氧训练</h3>
@@ -570,7 +563,7 @@ export default function Stats() {
 
         {/* Weight trend */}
         {weightData.length > 0 && (
-          <div className="bg-surface-1 rounded-2xl p-4 border border-border">
+          <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-rise-in">
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp size={16} className="text-accent-light" />
               <h3 className="text-primary font-semibold text-sm">体重趋势</h3>
@@ -610,6 +603,7 @@ export default function Stats() {
             </ResponsiveContainer>
           </div>
         )}
+      </div>
       </div>
     </div>
   )

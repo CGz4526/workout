@@ -13,24 +13,23 @@ export default function BottomNav() {
   const navigate = useNavigate()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around h-16 bg-surface-0/80 backdrop-blur-xl border-t border-border">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 mx-auto flex h-16 max-w-lg items-stretch justify-around border-t border-border bg-surface-0/80 px-2 backdrop-blur-xl">
       {navItems.map(({ path, icon: Icon, label }) => {
         const active = location.pathname === path
         return (
           <button
             key={path}
             onClick={() => navigate(path)}
-            className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-all duration-200 ${
-              active ? 'text-accent-light' : 'text-muted active:text-secondary'
+            aria-current={active ? 'page' : undefined}
+            className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-xl transition-colors duration-200 ${
+              active ? 'text-accent-dark dark:text-accent-light' : 'text-muted active:text-secondary'
             }`}
           >
-            <div className="relative">
-              <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
-              {active && (
-                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-accent-light" />
-              )}
-            </div>
-            <span className={`text-[10px] mt-0.5 ${active ? 'font-medium' : ''}`}>{label}</span>
+            {/* 选中态用一枚淡色药丸托住图标，比原来的小圆点更容易一眼定位 */}
+            <span className={`flex h-7 w-12 items-center justify-center rounded-full transition-colors duration-200 ${active ? 'bg-accent-soft' : ''}`}>
+              <Icon size={19} strokeWidth={active ? 2.3 : 1.8} />
+            </span>
+            <span className={`text-[10px] leading-none ${active ? 'font-semibold' : ''}`}>{label}</span>
           </button>
         )
       })}

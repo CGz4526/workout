@@ -5,6 +5,8 @@ import { Camera, X, Clock, Dumbbell, ListChecks, Plus, Trash2, Check, Route } fr
 import { db } from '../db'
 import { BODY_PARTS, type BodyPart, type ExerciseRecord, type WorkoutSession } from '../types'
 import Header from '../components/Header'
+import { bodyPartMeta } from '../lib/bodyParts'
+import { normalizeSession } from '../lib/session'
 
 const MAX_PHOTOS = 3
 
@@ -42,11 +44,12 @@ export default function SessionDetail() {
 
   useEffect(() => {
     if (!sessionId) return
-    db.sessions.get(sessionId).then((s) => {
-      if (!s) {
+    db.sessions.get(sessionId).then((raw) => {
+      if (!raw) {
         navigate('/history')
         return
       }
+      const s = normalizeSession(raw)
 
       const localDate = toLocalInput(new Date(s.date))
       const localDuration = Math.floor(s.duration / 60).toString()
@@ -265,9 +268,9 @@ export default function SessionDetail() {
         }
       />
 
-      <div className="px-4 py-4">
+      <div className="mx-auto w-full max-w-lg px-4 py-4">
         {/* Summary */}
-        <div className="bg-surface-1 rounded-2xl p-5 border border-border mb-4 animate-fade-in">
+        <div className="bg-surface-1 rounded-2xl p-5 border border-border shadow-card mb-4 animate-rise-in">
           {editing ? (
             <div className="space-y-3 mb-3">
               <input
@@ -349,7 +352,7 @@ export default function SessionDetail() {
         </div>
 
         {/* Body Weight */}
-        <div className="bg-surface-1 rounded-2xl p-4 border border-border mb-4 animate-fade-in" style={{ animationDelay: '0.05s' }}>
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card mb-4 animate-rise-in" style={{ animationDelay: '0.05s' }}>
           <h3 className="text-primary font-semibold text-sm mb-3">体重记录</h3>
           <div className="flex items-center gap-2">
             <input
@@ -370,14 +373,14 @@ export default function SessionDetail() {
         </div>
 
         {/* Diet */}
-        <div className="bg-surface-1 rounded-2xl p-4 border border-border mb-4 animate-fade-in" style={{ animationDelay: '0.06s' }}>
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card mb-4 animate-rise-in" style={{ animationDelay: '0.06s' }}>
           <h3 className="text-primary font-semibold text-sm mb-3">碳循环饮食</h3>
           <div className="flex gap-2">
             {([
-              ['low', '低碳日', 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'],
-              ['mid', '中碳日', 'bg-amber-500/20 border-amber-500/40 text-amber-400'],
-              ['high', '高碳日', 'bg-orange-600/20 border-orange-500/40 text-orange-500'],
-              ['cheat', '放纵餐', 'bg-red-500/20 border-red-500/40 text-red-400'],
+              ['low', '低碳日', 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'],
+              ['mid', '中碳日', 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400'],
+              ['high', '高碳日', 'bg-orange-500/15 border-orange-500/40 text-orange-600 dark:text-orange-400'],
+              ['cheat', '放纵餐', 'bg-red-500/15 border-red-500/40 text-red-600 dark:text-red-400'],
             ] as const).map(([value, label, activeClass]) => (
               <button
                 key={value}
@@ -398,7 +401,7 @@ export default function SessionDetail() {
         </div>
 
         {/* Photos */}
-        <div className="bg-surface-1 rounded-2xl p-4 border border-border mb-4 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card mb-4 animate-rise-in" style={{ animationDelay: '0.1s' }}>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-primary font-semibold text-sm">训练照片</h3>
             <span className="text-muted text-xs">{photos.length}/{MAX_PHOTOS}</span>
@@ -439,9 +442,9 @@ export default function SessionDetail() {
         </div>
 
         {/* Exercises */}
-        <div className="space-y-3 animate-fade-in" style={{ animationDelay: '0.2s' }}>
+        <div className="space-y-3 animate-rise-in" style={{ animationDelay: '0.2s' }}>
           {exercises.map((ex, exIdx) => (
-            <div key={exIdx} className="bg-surface-1 rounded-2xl p-4 border border-border">
+            <div key={exIdx} className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
               <div className="flex items-center justify-between mb-3 gap-2">
                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
                   <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
@@ -513,7 +516,7 @@ export default function SessionDetail() {
           {editing && (
             <button
               onClick={() => setSelectingExercise(true)}
-              className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors"
+              className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors tap-soft"
             >
               + 添加动作
             </button>
@@ -538,10 +541,11 @@ export default function SessionDetail() {
 
       {/* Exercise selector */}
       {selectingExercise && (
-        <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-surface-0 flex justify-center animate-fade-in">
+          <div className="flex h-full w-full max-w-lg flex-col">
           <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
             <h3 className="text-primary font-semibold">选择动作</h3>
-            <button onClick={() => { setSelectingExercise(false); setCustomName('') }} className="p-1.5 rounded-lg active:bg-surface-2">
+            <button onClick={() => { setSelectingExercise(false); setCustomName('') }} aria-label="关闭" className="p-1.5 rounded-lg active:bg-surface-2 tap">
               <X size={22} className="text-secondary" />
             </button>
           </div>
@@ -558,39 +562,55 @@ export default function SessionDetail() {
               <button
                 onClick={addCustomExercise}
                 disabled={!customName.trim()}
-                className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center active:bg-accent/20 disabled:opacity-30"
+                className="w-10 h-10 rounded-xl bg-accent-soft flex items-center justify-center active:bg-accent/20 disabled:opacity-30 tap"
               >
-                <Check size={18} className="text-accent-light" />
+                <Check size={18} className="text-accent" />
               </button>
             </div>
           </div>
 
           <div className="flex overflow-x-auto gap-2 px-4 py-3 border-b border-border no-scrollbar">
-            {BODY_PARTS.map((bp) => (
-              <button
-                key={bp}
-                onClick={() => setSelectTab(bp)}
-                className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  selectTab === bp
-                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                    : 'bg-surface-1 text-secondary border border-border'
-                }`}
-              >
-                {bp}
-              </button>
-            ))}
+            {BODY_PARTS.map((bp) => {
+              const m = bodyPartMeta(bp)
+              const TabIcon = m.icon
+              const active = selectTab === bp
+              return (
+                <button
+                  key={bp}
+                  onClick={() => setSelectTab(bp)}
+                  aria-pressed={active}
+                  className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition-all duration-200 tap ${
+                    active
+                      ? `bg-gradient-to-r ${m.gradient} text-white shadow-md shadow-black/10`
+                      : 'bg-surface-1 text-secondary border border-border active:bg-surface-2'
+                  }`}
+                >
+                  <TabIcon size={14} className={active ? 'text-white' : m.text} />
+                  {bp}
+                </button>
+              )
+            })}
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3">
-            {filteredExercises.map((ex) => (
-              <button
-                key={ex.id}
-                onClick={() => addExercise(ex.id, ex.name)}
-                className="w-full text-left p-4 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border transition-all"
-              >
-                <span className="text-primary text-sm font-medium">{ex.name}</span>
-              </button>
-            ))}
+            {filteredExercises.map((ex, idx) => {
+              const m = bodyPartMeta(ex.bodyPart)
+              const ExIcon = m.icon
+              return (
+                <button
+                  key={ex.id}
+                  onClick={() => addExercise(ex.id, ex.name)}
+                  className="w-full flex items-center gap-3 text-left p-3.5 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border shadow-card tap-soft animate-pop-in"
+                  style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
+                >
+                  <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${m.soft}`}>
+                    <ExIcon size={15} className={m.text} />
+                  </span>
+                  <span className="text-primary text-sm font-medium flex-1">{ex.name}</span>
+                </button>
+              )
+            })}
+          </div>
           </div>
         </div>
       )}

@@ -8,8 +8,9 @@ import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
 import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
 import { useWakeLock } from '../lib/useWakeLock'
-import { isTooShortToRecord } from '../lib/session'
+import { isTooShortToRecord, normalizeSession } from '../lib/session'
 import { sanitizeItem } from '../lib/template'
+import { bodyPartMeta } from '../lib/bodyParts'
 
 const REST_SECONDS = 150
 
@@ -57,7 +58,13 @@ function buildRecordsFromItems(items: TemplateItem[]): ExerciseRecord[] {
 export default function ActiveWorkout() {
   const { sessionId } = useParams<{ sessionId: string }>()
   const navigate = useNavigate()
-  const session = useLiveQuery(() => db.sessions.get(sessionId!), [sessionId])
+  const session = useLiveQuery(
+    async () => {
+      const raw = await db.sessions.get(sessionId!)
+      return raw ? normalizeSession(raw) : raw
+    },
+    [sessionId],
+  )
   const [exercises, setExercises] = useState<ExerciseRecord[]>([])
   const [finished, setFinished] = useState(false)
   const [showSummary, setShowSummary] = useState(false)
@@ -481,11 +488,11 @@ export default function ActiveWorkout() {
             </div>
           </div>
 
-          <h2 className="text-2xl font-bold text-primary mb-1 animate-fade-in">训练完成</h2>
-          <p className="text-secondary text-sm mb-8 animate-fade-in">继续保持，你很棒</p>
+          <h2 className="text-2xl font-bold text-primary mb-1 animate-rise-in">训练完成</h2>
+          <p className="text-secondary text-sm mb-8 animate-rise-in" style={{ animationDelay: '0.05s' }}>继续保持，你很棒</p>
 
           <div className={`w-full gap-3 mb-8 animate-fade-in ${isAerobic ? 'grid grid-cols-2 max-w-sm' : 'grid grid-cols-3'}`} style={{ animationDelay: '0.1s' }}>
-            <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+            <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border shadow-card">
               <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                 <Clock size={18} className="text-accent-light" />
               </div>
@@ -509,7 +516,7 @@ export default function ActiveWorkout() {
               <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">时长</p>
             </div>
             {isAerobic ? (
-              <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+              <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border shadow-card">
                 <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                   <Route size={18} className="text-accent-light" />
                 </div>
@@ -530,14 +537,14 @@ export default function ActiveWorkout() {
               </div>
             ) : (
               <>
-                <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+                <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border shadow-card">
                   <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                     <Dumbbell size={18} className="text-accent-light" />
                   </div>
                   <p className="text-primary text-lg font-bold">{completedExercises.length}</p>
                   <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">动作</p>
                 </div>
-                <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border">
+                <div className="bg-surface-1 rounded-2xl p-4 text-center border border-border shadow-card">
                   <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                     <ListChecks size={18} className="text-accent-light" />
                   </div>
@@ -549,11 +556,11 @@ export default function ActiveWorkout() {
           </div>
 
           {!isAerobic && (
-            <div className="w-full space-y-3 mb-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
+            <div className="w-full space-y-3 mb-8 animate-rise-in" style={{ animationDelay: '0.2s' }}>
               {exercises.filter(ex => ex.sets.some(s => s.completed)).map((ex, idx) => {
                 const doneSets = ex.sets.filter(s => s.completed)
                 return (
-                  <div key={idx} className="bg-surface-1 rounded-2xl p-4 border border-border">
+                  <div key={idx} className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
@@ -651,7 +658,7 @@ export default function ActiveWorkout() {
             const allDone = ex.sets.every((s) => s.completed)
             const prev = lastPerf[ex.exerciseId] ?? lastPerf[ex.exerciseName]
             return (
-              <div key={exIdx} className={`bg-surface-1 rounded-2xl p-4 border transition-colors duration-300 ${allDone ? 'border-accent/20' : 'border-border'}`}>
+              <div key={exIdx} className={`bg-surface-1 rounded-2xl p-4 border shadow-card transition-colors duration-300 ${allDone ? 'border-accent/30' : 'border-border'}`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-300 ${allDone ? 'bg-accent/20' : 'bg-surface-2'}`}>
@@ -739,7 +746,7 @@ export default function ActiveWorkout() {
           {!finished && (
             <button
               onClick={() => setSelectingExercise(true)}
-              className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors"
+              className="w-full py-3.5 border border-dashed border-surface-3 rounded-2xl text-secondary text-sm active:bg-surface-1 transition-colors tap-soft"
             >
               + 添加动作
             </button>
@@ -817,10 +824,11 @@ export default function ActiveWorkout() {
       )}
 
       {selectingExercise && (
-        <div className="fixed inset-0 z-50 bg-surface-0 flex flex-col animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-surface-0 flex justify-center animate-fade-in">
+          <div className="flex h-full w-full max-w-lg flex-col">
           <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-surface-0/80 backdrop-blur-xl">
             <h3 className="text-primary font-semibold">选择动作</h3>
-            <button onClick={() => { setSelectingExercise(false); setCustomName('') }} className="p-1.5 rounded-lg active:bg-surface-2">
+            <button onClick={() => { setSelectingExercise(false); setCustomName('') }} aria-label="关闭" className="p-1.5 rounded-lg active:bg-surface-2 tap">
               <X size={22} className="text-secondary" />
             </button>
           </div>
@@ -837,46 +845,62 @@ export default function ActiveWorkout() {
               <button
                 onClick={addCustomExercise}
                 disabled={!customName.trim()}
-                className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center active:bg-accent/20 disabled:opacity-30"
+                className="w-10 h-10 rounded-xl bg-accent-soft flex items-center justify-center active:bg-accent/20 disabled:opacity-30 tap"
               >
-                <Check size={18} className="text-accent-light" />
+                <Check size={18} className="text-accent" />
               </button>
             </div>
           </div>
 
           <div className="flex overflow-x-auto gap-2 px-4 py-3 border-b border-border no-scrollbar">
-            {BODY_PARTS.map((bp) => (
-              <button
-                key={bp}
-                onClick={() => setSelectTab(bp)}
-                className={`shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  selectTab === bp
-                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                    : 'bg-surface-1 text-secondary border border-border'
-                }`}
-              >
-                {bp}
-              </button>
-            ))}
+            {BODY_PARTS.map((bp) => {
+              const m = bodyPartMeta(bp)
+              const TabIcon = m.icon
+              const active = selectTab === bp
+              return (
+                <button
+                  key={bp}
+                  onClick={() => setSelectTab(bp)}
+                  aria-pressed={active}
+                  className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium transition-all duration-200 tap ${
+                    active
+                      ? `bg-gradient-to-r ${m.gradient} text-white shadow-md shadow-black/10`
+                      : 'bg-surface-1 text-secondary border border-border active:bg-surface-2'
+                  }`}
+                >
+                  <TabIcon size={14} className={active ? 'text-white' : m.text} />
+                  {bp}
+                </button>
+              )
+            })}
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3">
-            {filteredExercises.map((ex) => (
-              <button
-                key={ex.id}
-                onClick={() => addExerciseFromLib(ex.id, ex.name)}
-                className="w-full text-left p-4 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border transition-all"
-              >
-                <span className="text-primary text-sm font-medium">{ex.name}</span>
-              </button>
-            ))}
+            {filteredExercises.map((ex, idx) => {
+              const m = bodyPartMeta(ex.bodyPart)
+              const ExIcon = m.icon
+              return (
+                <button
+                  key={ex.id}
+                  onClick={() => addExerciseFromLib(ex.id, ex.name)}
+                  className="w-full flex items-center gap-3 text-left p-3.5 bg-surface-1 rounded-2xl mb-2 active:bg-surface-2 border border-border shadow-card tap-soft animate-pop-in"
+                  style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
+                >
+                  <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${m.soft}`}>
+                    <ExIcon size={15} className={m.text} />
+                  </span>
+                  <span className="text-primary text-sm font-medium flex-1">{ex.name}</span>
+                </button>
+              )
+            })}
+          </div>
           </div>
         </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-surface-0/80 backdrop-blur-xl border-t border-border">
+      <div className="fixed bottom-0 left-0 right-0 z-40 mx-auto max-w-lg p-4 bg-surface-0/80 backdrop-blur-xl border-t border-border">
         <button
           onClick={finishWorkout}
-          className="w-full py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+          className="w-full py-4 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-glow tap flex items-center justify-center gap-2"
         >
           <Zap size={18} />
           结束训练

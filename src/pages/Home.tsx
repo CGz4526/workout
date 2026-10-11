@@ -1,34 +1,34 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
-import { Play, Clock, Zap, ChevronRight, Shield, Heart, ArrowBigUp, Footprints, Target, Flame, Bike, Waves, Coffee } from 'lucide-react'
+import { Play, Clock, Zap, ChevronRight, Footprints, Target, Bike, Waves, Coffee, CalendarDays, Route, Dumbbell } from 'lucide-react'
 import { db } from '../db'
 import type { ExerciseRecord } from '../types'
+import { bodyPartMeta } from '../lib/bodyParts'
+import { normalizeSession } from '../lib/session'
 import Header from '../components/Header'
-
-const BODY_PART_META: Record<string, { gradient: string; icon: React.ElementType }> = {
-  '肩':   { gradient: 'from-orange-500 to-amber-500', icon: Shield },
-  '胸':   { gradient: 'from-red-500 to-rose-500',     icon: Heart },
-  '背':   { gradient: 'from-blue-500 to-cyan-500',    icon: ArrowBigUp },
-  '腿':   { gradient: 'from-purple-500 to-violet-500', icon: Footprints },
-  '二头': { gradient: 'from-pink-500 to-fuchsia-500',  icon: Target },
-  '三头': { gradient: 'from-teal-500 to-emerald-500',  icon: Zap },
-  '核心': { gradient: 'from-yellow-500 to-orange-500', icon: Flame },
-}
 
 // 有氧入口。带 `choices` 的卡片点开后会先问「具体是哪一项」——
 // 爬楼梯和爬坡都属于爬升类训练，每次练的可能是任一种，不该在卡片上写死。
 // 存进记录的 templateName 是最终选中的那个名字，Stats 按类型统计也据此分组。
+// 每项带一对颜色：`soft` 是图标底，`color` 是图标本身（深色主题下用浅一档）。
 const AEROBIC_ENTRIES: {
   label: string
   icon: React.ElementType
+  soft: string
   color: string
   choices?: string[]
 }[] = [
-  { label: '跑步', icon: Bike, color: 'text-blue-400' },
-  { label: '游泳', icon: Waves, color: 'text-cyan-400' },
-  { label: '羽毛球', icon: Target, color: 'text-orange-400' },
-  { label: '爬楼梯/爬坡', icon: Footprints, color: 'text-purple-400', choices: ['爬楼梯', '爬坡'] },
+  { label: '跑步', icon: Bike, soft: 'bg-blue-500/10', color: 'text-blue-500 dark:text-blue-400' },
+  { label: '游泳', icon: Waves, soft: 'bg-cyan-500/10', color: 'text-cyan-600 dark:text-cyan-400' },
+  { label: '羽毛球', icon: Target, soft: 'bg-orange-500/10', color: 'text-orange-500 dark:text-orange-400' },
+  {
+    label: '爬楼梯/爬坡',
+    icon: Footprints,
+    soft: 'bg-purple-500/10',
+    color: 'text-purple-500 dark:text-purple-400',
+    choices: ['爬楼梯', '爬坡'],
+  },
 ]
 
 const startAerobic = async (name: string, navigate: (path: string) => void) => {
@@ -63,7 +63,7 @@ export default function Home() {
   )
   const recentSessions = useLiveQuery(() =>
     db.sessions.orderBy('date').reverse().toArray().then(
-      (all) => all.filter((s) => s.finished)
+      (all) => all.filter((s) => s.finished).map(normalizeSession)
     )
   ) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
@@ -97,10 +97,13 @@ export default function Home() {
       <Header title="健身记录" />
 
       <div className="px-4 pt-5 pb-6">
-        <div className="mb-6 animate-fade-in">
-          <p className="text-muted text-xs uppercase tracking-widest mb-1">{today}</p>
-          <h2 className="text-2xl font-bold text-primary">
-            今日训练<span className="text-accent-light">.</span>
+        <div className="mb-6 animate-rise-in">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-secondary bg-surface-1 border border-border shadow-card px-2.5 py-1 rounded-full mb-2.5">
+            <CalendarDays size={12} className="text-accent" />
+            {today}
+          </span>
+          <h2 className="text-[28px] leading-tight font-bold text-primary tracking-tight">
+            今日训练<span className="text-accent">.</span>
           </h2>
         </div>
 
@@ -108,7 +111,7 @@ export default function Home() {
         {activeSession && (
           <button
             onClick={() => navigate(`/session/${activeSession.id}`)}
-            className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-4 bg-gradient-to-r from-amber-600 to-orange-500 active:from-amber-700 active:to-orange-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-amber-500/20 animate-fade-in"
+            className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-4 bg-gradient-to-r from-amber-600 to-orange-500 active:from-amber-700 active:to-orange-600 text-white font-semibold rounded-2xl shadow-lg shadow-amber-500/25 tap animate-rise-in"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-active:translate-x-[100%] transition-transform duration-700" />
             继续训练：{activeSession.templateName}
@@ -120,7 +123,7 @@ export default function Home() {
           <>
             <button
               onClick={() => navigate('/pre-workout')}
-              className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-3 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl transition-all duration-200 shadow-lg shadow-emerald-500/20 animate-fade-in"
+              className="w-full group relative overflow-hidden flex items-center justify-center gap-2.5 py-4 mb-3 bg-gradient-to-r from-emerald-600 to-emerald-500 active:from-emerald-700 active:to-emerald-600 text-white font-semibold rounded-2xl shadow-glow tap animate-rise-in"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-active:translate-x-[100%] transition-transform duration-700" />
               <Play size={20} fill="currentColor" />
@@ -128,15 +131,18 @@ export default function Home() {
             </button>
 
             <div className="grid grid-cols-2 gap-2.5 mb-3">
-              {AEROBIC_ENTRIES.map((entry) => (
+              {AEROBIC_ENTRIES.map((entry, idx) => (
                 <button
                   key={entry.label}
                   onClick={() =>
                     entry.choices ? setChoosingAerobic(entry) : startAerobic(entry.label, navigate)
                   }
-                  className="flex items-center justify-center gap-2 py-3.5 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all"
+                  style={{ animationDelay: `${0.06 + idx * 0.04}s` }}
+                  className="flex items-center justify-center gap-2.5 py-3.5 bg-surface-1 rounded-2xl border border-border shadow-card tap animate-pop-in"
                 >
-                  <entry.icon size={18} className={entry.color} />
+                  <span className={`w-7 h-7 rounded-xl ${entry.soft} flex items-center justify-center shrink-0`}>
+                    <entry.icon size={15} className={entry.color} />
+                  </span>
                   <span className="text-primary text-sm font-medium">{entry.label}</span>
                 </button>
               ))}
@@ -160,7 +166,7 @@ export default function Home() {
                 await db.sessions.add(session)
                 navigate(`/session-detail/${session.id}`)
               }}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all mb-8"
+              className="w-full group relative overflow-hidden flex items-center justify-center gap-2 py-3 bg-surface-1 rounded-2xl border border-border shadow-card tap-soft mb-8"
             >
               <Coffee size={16} className="text-muted" />
               <span className="text-secondary text-sm">休息日</span>
@@ -170,10 +176,12 @@ export default function Home() {
 
         {/* Templates */}
         {templates.length > 0 && (
-          <section className="mb-8 animate-fade-in" style={{ animationDelay: '0.1s' }}>
+          <section className="mb-8 animate-rise-in" style={{ animationDelay: '0.12s' }}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Zap size={16} className="text-accent-light" />
+                <span className="w-6 h-6 rounded-lg bg-accent-soft flex items-center justify-center">
+                  <Zap size={13} className="text-accent" />
+                </span>
                 <h3 className="text-primary text-sm font-semibold tracking-wide">快速开始</h3>
               </div>
               <button
@@ -185,29 +193,36 @@ export default function Home() {
               </button>
             </div>
             <div className="grid gap-2.5">
-              {templates.map((t) => {
+              {templates.map((t, idx) => {
                 const bp = getTemplateBodyPart(t)
-                const meta = BODY_PART_META[bp] ?? BODY_PART_META['肩']
+                const meta = bodyPartMeta(bp)
                 const Icon = meta.icon
                 return (
                   <button
                     key={t.id}
                     onClick={() => navigate(`/template/${t.id}`)}
-                    className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all duration-200"
+                    style={{ animationDelay: `${Math.min(idx, 8) * 0.04}s` }}
+                    className="group relative flex items-center gap-3.5 p-4 pl-5 bg-surface-1 rounded-2xl border border-border shadow-card tap-soft animate-pop-in overflow-hidden"
                   >
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shrink-0 shadow-lg`}>
-                      <Icon size={18} className="text-white" />
+                    {/* 左侧一条与部位同色的色带：把「颜色」从图标扩展到整张卡片，
+                        一眼就能看出这是练哪个部位的，也让列表不再是清一色的灰。 */}
+                    <span className={`absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b ${meta.gradient}`} />
+                    <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shrink-0 shadow-md shadow-black/10`}>
+                      <Icon size={19} className="text-white" />
                     </div>
                     <div className="flex-1 text-left min-w-0">
                       <p className="text-primary font-semibold text-sm">{t.name}</p>
-                      <p className="text-muted text-xs mt-0.5">
+                      <p className="text-muted text-xs mt-1 truncate">
                         {t.items.length === 0
                           ? '暂无动作'
                           : t.items.map((item) => item.exerciseName).slice(0, 3).join('、') +
                             (t.items.length > 3 ? ` +${t.items.length - 3}` : '')}
                       </p>
                     </div>
-                    <ChevronRight size={18} className="text-surface-3 group-active:text-secondary transition-colors shrink-0" />
+                    <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${meta.soft} ${meta.text} ${meta.border}`}>
+                      {bp}
+                    </span>
+                    <ChevronRight size={18} className="text-muted group-active:text-secondary transition-colors shrink-0" />
                   </button>
                 )
               })}
@@ -217,36 +232,44 @@ export default function Home() {
 
         {/* Recent sessions */}
         {recentSessions.length > 0 && (
-          <section className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
+          <section className="animate-rise-in" style={{ animationDelay: '0.18s' }}>
             <div className="flex items-center gap-2 mb-4">
-              <Clock size={16} className="text-secondary" />
+              <span className="w-6 h-6 rounded-lg bg-surface-2 flex items-center justify-center">
+                <Clock size={13} className="text-secondary" />
+              </span>
               <h3 className="text-primary text-sm font-semibold tracking-wide">最近训练</h3>
             </div>
             <div className="grid gap-2.5">
-              {recentSessions.slice(0, 5).map((s) => {
+              {recentSessions.slice(0, 5).map((s, idx) => {
                 const completedSets = s.exercises.reduce(
                   (sum, ex) => sum + ex.sets.filter((st) => st.completed).length, 0
                 )
+                // 有氧用蓝色、力量用主色，和首页上方的入口配色保持一致
+                const isAerobic = s.aerobic === true
+                const Icon = isAerobic ? Route : Dumbbell
                 return (
                   <button
                     key={s.id}
                     onClick={() => navigate(`/session-detail/${s.id}`)}
-                    className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border active:bg-surface-2 transition-all duration-200"
+                    style={{ animationDelay: `${Math.min(idx, 6) * 0.04}s` }}
+                    className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border shadow-card tap-soft animate-pop-in"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center shrink-0">
-                      <Clock size={18} className="text-secondary" />
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isAerobic ? 'bg-blue-500/10' : 'bg-accent-soft'}`}>
+                      <Icon size={18} className={isAerobic ? 'text-blue-500 dark:text-blue-400' : 'text-accent'} />
                     </div>
                     <div className="flex-1 text-left min-w-0">
-                      <p className="text-primary font-medium text-sm">
+                      <p className="text-primary font-medium text-sm truncate">
                         {s.templateName ?? '自由训练'}
                       </p>
-                      <p className="text-muted text-xs mt-0.5">
+                      <p className="text-muted text-xs mt-1 truncate">
                         {new Date(s.date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                         {' · '}
-                        {completedSets} 组 · {formatDuration(s.duration)}
+                        {isAerobic
+                          ? `${formatDuration(s.duration)}${s.distance ? ` · ${s.distance}km` : ''}`
+                          : `${completedSets} 组 · ${formatDuration(s.duration)}`}
                       </p>
                     </div>
-                    <ChevronRight size={18} className="text-surface-3 group-active:text-secondary transition-colors shrink-0" />
+                    <ChevronRight size={18} className="text-muted group-active:text-secondary transition-colors shrink-0" />
                   </button>
                 )
               })}
