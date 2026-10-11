@@ -249,13 +249,11 @@ export default function History() {
                   const photoCount = s.photos?.length ?? 0
                   const startTime = new Date(s.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
                   const bodyParts = getBodyParts(s)
-                  // 左侧色带区分训练类型：力量=主色、有氧=蓝、休息日=中性灰。
-                  // 原来力量卡片写死 border-zinc-700，浅色主题下是一条突兀的深色边。
-                  const band = isRest
-                    ? 'bg-gradient-to-b from-stone-400 to-stone-500'
-                    : isAerobic
-                      ? 'bg-gradient-to-b from-blue-500 to-cyan-500'
-                      : 'bg-gradient-to-b from-emerald-600 to-emerald-500'
+                  // 力量训练用一圈加粗的主色边框着重标出——历史列表里一眼就能
+                  // 数出「最近练了几次力量」。有氧与休息日保持中性细边，不抢视觉。
+                  const cardBorder = !isRest && !isAerobic
+                    ? 'border-2 border-accent/60'
+                    : 'border border-border'
                   const iconBg = isRest ? 'bg-stone-500/10' : isAerobic ? 'bg-blue-500/10' : 'bg-accent-soft'
                   const iconColor = isRest
                     ? 'text-stone-500 dark:text-stone-400'
@@ -264,15 +262,14 @@ export default function History() {
                       : 'text-accent'
                   const RowIcon = isRest ? Coffee : isAerobic ? Route : Dumbbell
                   return (
-                    <div className="rounded-2xl overflow-hidden border border-border shadow-card">
+                    <div className={`rounded-2xl overflow-hidden shadow-card ${cardBorder}`}>
                     <SwipeableItem
                       key={s.id}
                       onDelete={() => handleDelete(s.id)}
                       onContinue={isRest ? undefined : () => handleContinue(s.id)}
                       onClick={() => navigate(`/session-detail/${s.id}`)}
                     >
-                      <div className="relative flex items-center gap-3.5 p-4 pl-5">
-                        <span className={`absolute left-0 top-0 bottom-0 w-1.5 ${band}`} />
+                      <div className="flex items-center gap-3.5 p-4">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
                           <RowIcon size={18} className={iconColor} />
                         </div>
