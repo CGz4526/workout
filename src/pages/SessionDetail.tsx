@@ -71,7 +71,7 @@ export default function SessionDetail() {
         distance: localDistance,
       }
     })
-  }, [sessionId])
+  }, [sessionId, navigate])
 
   const saveSession = async () => {
     if (!sessionId) return

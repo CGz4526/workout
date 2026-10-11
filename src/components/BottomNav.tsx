@@ -12,8 +12,11 @@ export default function BottomNav() {
   const location = useLocation()
   const navigate = useNavigate()
 
+  // z-40 而不是 z-50：全屏浮层（动作选择、照片预览、首页底部选择层）都是 z-50。
+  // 两边都写 z-50 时，DOM 里靠后的 BottomNav 会盖在浮层之上，把浮层最下面
+  // 一行内容挡住。导航栏应当永远在弹层之下。
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 mx-auto flex h-16 max-w-lg items-stretch justify-around border-t border-border bg-surface-0/80 px-2 backdrop-blur-xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 mx-auto flex h-16 max-w-lg items-stretch justify-around border-t border-border bg-surface-0/80 px-2 backdrop-blur-xl">
       {navItems.map(({ path, icon: Icon, label }) => {
         const active = location.pathname === path
         return (

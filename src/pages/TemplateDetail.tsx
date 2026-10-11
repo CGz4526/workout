@@ -55,7 +55,7 @@ export default function TemplateDetail() {
         }
       })
     }
-  }, [templateId])
+  }, [templateId, navigate])
 
   // Auto-save edits back to the template so changes persist long-term
   useEffect(() => {

@@ -191,7 +191,9 @@ export default function ActiveWorkout() {
 
   // Rest timer - just trigger re-renders, actual calculation is done above
   useEffect(() => {
-    if (!restEndTime || restRemaining <= 0) return
+    // 用 Date.now() 而不是 restRemaining 做这个前置判断：restRemaining 是由
+    // 每秒推进的 now 派生的，把它写进依赖数组会让定时器每秒重建一次。
+    if (!restEndTime || Date.now() >= restEndTime) return
     restTimerRef.current = window.setInterval(() => {
       const t = Date.now()
       setNow(t) // trigger re-render to recalculate
@@ -734,7 +736,7 @@ export default function ActiveWorkout() {
                 {!finished && (
                   <button
                     onClick={() => removeExercise(exIdx)}
-                    className="text-red-400/60 text-[10px] mt-2 px-2 py-1 rounded-lg active:bg-red-500/10 transition-colors"
+                    className="text-red-500 dark:text-red-400 text-[10px] mt-2 px-2 py-1 rounded-lg active:bg-red-500/10 transition-colors"
                   >
                     删除这个动作
                   </button>

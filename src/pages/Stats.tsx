@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { TrendingUp, Calendar, Activity, Dumbbell, ChevronLeft, ChevronRight, ChartColumn } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type WorkoutSession } from '../types'
+import { BODY_PARTS, type Exercise, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
@@ -62,13 +62,19 @@ const sessionVolume = (s: WorkoutSession) =>
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 
+// useLiveQuery 在首次结果到达前返回 undefined。写成 `?? []` 会在**每一次渲染**
+// 造出一个新数组，于是下面每个 useMemo 的依赖每帧都变、缓存全部失效。
+// 用模块级常量兜底，身份才稳定。
+const EMPTY_SESSIONS: WorkoutSession[] = []
+const EMPTY_EXERCISES: Exercise[] = []
+
 export default function Stats() {
   const sessions = useLiveQuery(() =>
     db.sessions.orderBy('date').reverse().toArray().then(
       (all) => all.filter((s) => s.finished).map(normalizeSession)
     )
-  ) ?? []
-  const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
+  ) ?? EMPTY_SESSIONS
+  const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? EMPTY_EXERCISES
 
   const [timeRange, setTimeRange] = useState<TimeRange>('1w')
   const [calMonth, setCalMonth] = useState(() => {
@@ -180,8 +186,10 @@ export default function Stats() {
   }, [strengthSessions, allExercises])
 
   // Aerobic stats
+  // 注意别再在这里 `const aerobicSessions = filteredSessions.filter(...)`：
+  // 那会遮蔽外层的同名变量，既白跑一次过滤，又让依赖数组写错（声明的是
+  // aerobicSessions、真正用到的却是 filteredSessions）。外层已经是同一个集合。
   const aerobicStats = useMemo(() => {
-    const aerobicSessions = filteredSessions.filter((s) => s.aerobic === true)
     const total = aerobicSessions.length
     const totalDistance = aerobicSessions.reduce((sum, s) => sum + (s.distance ?? 0), 0)
     const totalDuration = aerobicSessions.reduce((sum, s) => sum + s.duration, 0)
