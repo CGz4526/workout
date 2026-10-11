@@ -6,6 +6,7 @@ import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
+import { normalizeTemplate } from '../lib/template'
 
 // 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
 type DragMeta = {
@@ -46,13 +47,15 @@ export default function TemplateDetail() {
 
   useEffect(() => {
     if (templateId) {
-      db.templates.get(templateId).then((t) => {
-        if (t) {
-          setTemplate(t)
-          setItems([...t.items])
-        } else {
+      db.templates.get(templateId).then((raw) => {
+        if (!raw) {
           navigate('/')
+          return
         }
+        // 缺 items 的模板（坏备份）在这里补成 []，否则 [...t.items] 会抛错
+        const t = normalizeTemplate(raw)
+        setTemplate(t)
+        setItems([...t.items])
       })
     }
   }, [templateId, navigate])

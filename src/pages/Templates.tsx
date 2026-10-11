@@ -4,11 +4,11 @@ import { Plus, Trash2, Edit3, X, Minus, Plus as PlusIcon, Flame, Check } from 'l
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type TemplateItem, type WorkoutTemplate } from '../types'
 import Header from '../components/Header'
-import { type CountField, stepItemCount } from '../lib/template'
+import { type CountField, stepItemCount, normalizeTemplate } from '../lib/template'
 import { bodyPartMeta } from '../lib/bodyParts'
 
 export default function Templates() {
-  const templates = useLiveQuery(() => db.templates.toArray()) ?? []
+  const templates = useLiveQuery(() => db.templates.toArray().then((all) => all.map(normalizeTemplate))) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)

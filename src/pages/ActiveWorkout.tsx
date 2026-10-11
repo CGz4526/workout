@@ -9,7 +9,7 @@ import CheckButton from '../components/CheckButton'
 import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
 import { useWakeLock } from '../lib/useWakeLock'
 import { isTooShortToRecord, normalizeSession } from '../lib/session'
-import { sanitizeItem } from '../lib/template'
+import { sanitizeItem, normalizeTemplate } from '../lib/template'
 import { bodyPartMeta } from '../lib/bodyParts'
 
 const REST_SECONDS = 150
@@ -40,9 +40,18 @@ function secondsToMinutesInput(seconds: number): string {
 // defaultSets 有两个不受源码控制的来源（备份导入、sessionStorage 的 preset），
 // 所以必须先用 sanitizeItem 夹住再 Array.from——一个坏掉的备份里出现
 // defaultSets: 100000，这里就会当场铺出十万个组对象把页面卡死。
-function buildRecordsFromItems(items: TemplateItem[]): ExerciseRecord[] {
+/**
+ * 把模板条目铺成训练记录。
+ *
+ * 入参是**敌意数据**，不是内部结构：它来自 `sessionStorage` 的 preset JSON 和
+ * 库里的模板，两者都由备份导入 / 手改产生，没有任何 schema 校验。
+ * 不是数组就退回空列表——否则 `items.map` 抛错会让这个初始化 effect 中途死掉，
+ * `setLoaded(true)` 永远执行不到，训练页会一直卡在加载态。
+ */
+function buildRecordsFromItems(items: unknown): ExerciseRecord[] {
+  if (!Array.isArray(items)) return []
   return items.map((raw) => {
-    const item = sanitizeItem(raw)
+    const item = sanitizeItem(raw as TemplateItem)
     return {
       exerciseId: item.exerciseId,
       exerciseName: item.exerciseName,
@@ -155,12 +164,21 @@ export default function ActiveWorkout() {
       const presetKey = `preset-${sessionId}`
       const presetData = sessionStorage.getItem(presetKey)
       if (presetData) {
-        const presetItems = JSON.parse(presetData) as TemplateItem[]
+        // 坏 JSON 会让 JSON.parse 抛错，同样会打断初始化；解不开就当没有 preset
+        let presetItems: unknown
+        try {
+          presetItems = JSON.parse(presetData)
+        } catch {
+          presetItems = null
+        }
         setExercises(buildRecordsFromItems(presetItems))
         sessionStorage.removeItem(presetKey)
         setLoaded(true)
       } else if (session.templateId) {
-        db.templates.get(session.templateId).then((template) => {
+        db.templates.get(session.templateId).then((raw) => {
+          // 缺 items 的模板（坏备份）在这里补成 []，否则 .length 会抛错、
+          // 整个 .then 中断，训练页永远停在加载态
+          const template = raw ? normalizeTemplate(raw) : null
           if (template && template.items.length > 0) {
             setExercises(buildRecordsFromItems(template.items))
           }

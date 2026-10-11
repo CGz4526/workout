@@ -6,6 +6,7 @@ import { db } from '../db'
 import type { ExerciseRecord } from '../types'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
+import { normalizeTemplate } from '../lib/template'
 import Header from '../components/Header'
 
 // 有氧入口。带 `choices` 的卡片点开后会先问「具体是哪一项」——
@@ -57,7 +58,7 @@ export default function Home() {
   const navigate = useNavigate()
   // 非空时弹出「这次是爬楼梯还是爬坡」的选择层
   const [choosingAerobic, setChoosingAerobic] = useState<{ label: string; choices?: string[] } | null>(null)
-  const templates = useLiveQuery(() => db.templates.toArray()) ?? []
+  const templates = useLiveQuery(() => db.templates.toArray().then((all) => all.map(normalizeTemplate))) ?? []
   const activeSession = useLiveQuery(() =>
     db.sessions.filter((s) => !s.finished).first()
   )
