@@ -120,7 +120,7 @@ export default function Settings() {
         {/* Export */}
         <button
           onClick={handleExport}
-          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border shadow-card active:bg-surface-2 transition-colors tap-soft"
+          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border shadow-card active:bg-surface-2 transition-colors tap-soft animate-rise-in"
         >
           <div className="w-10 h-10 rounded-xl bg-accent-soft flex items-center justify-center">
             <Download size={20} className="text-accent" />
@@ -134,7 +134,7 @@ export default function Settings() {
         {/* Import */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border shadow-card active:bg-surface-2 transition-colors tap-soft"
+          className="w-full flex items-center gap-4 p-4 bg-surface-1 rounded-2xl border border-border shadow-card active:bg-surface-2 transition-colors tap-soft animate-rise-in"
         >
           <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
             <Upload size={20} className="text-blue-500 dark:text-blue-400" />

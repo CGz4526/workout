@@ -202,3 +202,23 @@
     transform: scale(0.988);
   }
 }
+
+/* ================= 尊重系统的「减弱动态效果」=================
+   这套界面有较多入场动画、错落延迟和 :active 缩放。对前庭敏感的用户
+   （iOS/Android/Windows 都有这个开关）这些是实打实的困扰，不是审美问题。
+
+   只压时长、不禁用元素本身：animation-duration 趋近 0 时，配合
+   fill-mode: backwards，元素会立刻落到动画的终态，布局与可见性都不变。
+   iteration-count 压成 1 是为了让 pulse-glow 这类无限动画也停下来。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}

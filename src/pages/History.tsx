@@ -222,7 +222,7 @@ export default function History() {
 
       <div className="mx-auto w-full max-w-lg px-4 py-3">
         {Object.keys(grouped).length === 0 ? (
-          <div className="text-center py-16">
+          <div className="text-center py-16 animate-rise-in">
             <div className="w-14 h-14 rounded-2xl bg-surface-1 border border-border flex items-center justify-center mx-auto mb-4">
               <Calendar size={24} className="text-muted" />
             </div>
@@ -230,14 +230,17 @@ export default function History() {
             <p className="text-muted text-xs mt-1">完成训练后会自动记录</p>
           </div>
         ) : (
-          Object.entries(grouped).map(([date, items]) => (
+          Object.entries(grouped).map(([date, items], groupIdx) => (
             <div key={date} className="mb-6">
-              <div className="flex items-center gap-2 mb-3 px-1">
+              <div
+                className="flex items-center gap-2 mb-3 px-1 animate-rise-in"
+                style={{ animationDelay: `${Math.min(groupIdx, 6) * 0.05}s` }}
+              >
                 <div className="w-1.5 h-1.5 rounded-full bg-accent/60" />
                 <h3 className="text-secondary text-xs font-semibold uppercase tracking-wider">{date}</h3>
               </div>
               <div className="space-y-2">
-                {items.map((s) => {
+                {items.map((s, idx) => {
                   const isAerobic = s.aerobic === true
                   // A rest day never ran a timer. A strength workout that was
                   // finished after deleting every exercise still has startTime,
@@ -262,7 +265,12 @@ export default function History() {
                       : 'text-accent'
                   const RowIcon = isRest ? Coffee : isAerobic ? Route : Dumbbell
                   return (
-                    <div className={`rounded-2xl overflow-hidden shadow-card ${cardBorder}`}>
+                    // 入场动画放在**外层 wrapper** 上，不放 SwipeableItem 里那个
+                    // 会被 translateX 平移的元素上——两者都动 transform，会互相顶掉。
+                    <div
+                      className={`rounded-2xl overflow-hidden shadow-card animate-pop-in ${cardBorder}`}
+                      style={{ animationDelay: `${Math.min(idx, 8) * 0.04}s` }}
+                    >
                     <SwipeableItem
                       key={s.id}
                       onDelete={() => handleDelete(s.id)}
