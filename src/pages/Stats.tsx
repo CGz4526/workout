@@ -173,6 +173,10 @@ export default function Stats() {
     }
     for (const w of dayWeights) {
       const d = localNoonOf(w.date)
+      // 权重趋势同样要遵守「近一周/一月/三月」的范围。旧实现从 filteredSessions
+      // 取数所以天然受约束；weights 表是另一份数据，必须自己按 cutoffDate 过滤，
+      // 否则两年前的体重会漏进「近一周」的图里。
+      if (d < cutoffDate) continue
       byDay.set(w.date, {
         daysAgo: daysAgo(d),
         label: d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
@@ -180,7 +184,7 @@ export default function Stats() {
       })
     }
     return [...byDay.values()].sort((a, b) => b.daysAgo - a.daysAgo)
-  }, [filteredSessions, dayWeights])
+  }, [filteredSessions, dayWeights, cutoffDate])
 
   // Body part stats (count each part once per training day)
   const bodyPartData = useMemo(() => {
