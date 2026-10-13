@@ -105,10 +105,14 @@ export default function PreWorkout() {
                     <ItemIcon size={14} className={m.text} />
                   </span>
                   <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
-                  <div className="flex items-center gap-1 bg-surface-2 rounded-lg px-1 py-0.5">
+                  <div className="flex items-center gap-1 bg-surface-2 rounded-lg px-1 py-0.5 shrink-0">
                     <button onClick={() => updateItem(idx, 'defaultSets', -1)} aria-label="减少组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={14} /></button>
-                    <span className="text-primary text-xs w-14 text-center font-mono">{item.defaultSets}×{item.defaultReps}</span>
+                    <span className="text-primary text-xs w-5 text-center font-mono">{item.defaultSets}</span>
                     <button onClick={() => updateItem(idx, 'defaultSets', 1)} aria-label="增加组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={14} /></button>
+                    <span className="text-muted text-xs px-0.5">×</span>
+                    <button onClick={() => updateItem(idx, 'defaultReps', -1)} aria-label="减少次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={14} /></button>
+                    <span className="text-primary text-xs w-6 text-center font-mono">{item.defaultReps}</span>
+                    <button onClick={() => updateItem(idx, 'defaultReps', 1)} aria-label="增加次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={14} /></button>
                   </div>
                   <button onClick={() => removeItem(idx)} aria-label={`删除 ${item.exerciseName}`} className="p-2 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 tap"><Trash2 size={15} /></button>
                 </div>

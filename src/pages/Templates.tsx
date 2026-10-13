@@ -140,10 +140,14 @@ export default function Templates() {
                     <span className="text-xs font-bold text-accent-light">{idx + 1}</span>
                   </div>
                   <span className="flex-1 text-primary text-sm font-medium">{item.exerciseName}</span>
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => updateItem(idx, 'defaultSets', -1)} className="p-1 rounded-md text-secondary active:bg-surface-3"><Minus size={13} /></button>
-                    <span className="text-primary text-xs w-14 text-center font-mono">{item.defaultSets}×{item.defaultReps}</span>
-                    <button onClick={() => updateItem(idx, 'defaultSets', 1)} className="p-1 rounded-md text-secondary active:bg-surface-3"><PlusIcon size={13} /></button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => updateItem(idx, 'defaultSets', -1)} aria-label="减少组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={13} /></button>
+                    <span className="text-primary text-xs w-5 text-center font-mono">{item.defaultSets}</span>
+                    <button onClick={() => updateItem(idx, 'defaultSets', 1)} aria-label="增加组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={13} /></button>
+                    <span className="text-muted text-xs px-0.5">×</span>
+                    <button onClick={() => updateItem(idx, 'defaultReps', -1)} aria-label="减少次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={13} /></button>
+                    <span className="text-primary text-xs w-6 text-center font-mono">{item.defaultReps}</span>
+                    <button onClick={() => updateItem(idx, 'defaultReps', 1)} aria-label="增加次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={13} /></button>
                   </div>
                   <button onClick={() => removeItem(idx)} className="p-1.5 rounded-md text-muted active:text-red-400 active:bg-red-500/10"><Trash2 size={14} /></button>
                 </div>

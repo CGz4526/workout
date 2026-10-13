@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Plus, X, Check, GripVertical } from 'lucide-react'
+import { Play, Plus, X, Check, GripVertical, Minus, Plus as PlusIcon } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
-import { normalizeTemplate } from '../lib/template'
+import { normalizeTemplate, stepItemCount } from '../lib/template'
 
 // 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
 type DragMeta = {
@@ -115,6 +115,18 @@ export default function TemplateDetail() {
 
   const removeItem = (idx: number) => {
     setItems(items.filter((_, i) => i !== idx))
+  }
+
+  // 步进组数 / 次数（夹取在 [1,20] / [1,100]）。改动经 setItems 触发页面既有的
+  // 400ms 防抖自动保存落库，无需单独写 db。
+  const stepItem = (idx: number, field: 'defaultSets' | 'defaultReps', delta: number) => {
+    setItems((prev) => {
+      const item = prev[idx]
+      if (!item) return prev
+      const next = [...prev]
+      next[idx] = { ...item, [field]: stepItemCount(field, item[field], delta) }
+      return next
+    })
   }
 
   // ---- 拖拽调序（Pointer Events）----
@@ -328,6 +340,15 @@ export default function TemplateDetail() {
                   </button>
                   <span className="w-5 text-center text-xs font-mono text-muted shrink-0">{shownIdx + 1}</span>
                   <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
+                  <div className="flex items-center gap-0.5 bg-surface-2 rounded-lg px-1 py-0.5 shrink-0">
+                    <button onClick={() => stepItem(idx, 'defaultSets', -1)} aria-label="减少组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={13} /></button>
+                    <span className="text-primary text-xs w-5 text-center font-mono">{item.defaultSets}</span>
+                    <button onClick={() => stepItem(idx, 'defaultSets', 1)} aria-label="增加组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={13} /></button>
+                    <span className="text-muted text-xs px-0.5">×</span>
+                    <button onClick={() => stepItem(idx, 'defaultReps', -1)} aria-label="减少次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={13} /></button>
+                    <span className="text-primary text-xs w-6 text-center font-mono">{item.defaultReps}</span>
+                    <button onClick={() => stepItem(idx, 'defaultReps', 1)} aria-label="增加次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={13} /></button>
+                  </div>
                   {exMeta && (
                     <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${exMeta.soft} ${exMeta.text} ${exMeta.border}`}>
                       {ex!.bodyPart}
