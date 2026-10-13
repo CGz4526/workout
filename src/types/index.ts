@@ -25,6 +25,15 @@ export interface SetRecord {
   completed: boolean
 }
 
+// 每日体重。一天一条，key 是本地日期 'YYYY-MM-DD'（不是 UTC ISO）——
+// 早起称体重时当天往往还没有任何训练记录，所以它不能挂在 session 上，
+// 必须是独立的一天的属性。
+export interface BodyWeight {
+  date: string
+  weight: number
+  updatedAt: number
+}
+
 export interface ExerciseRecord {
   exerciseId: string
   exerciseName: string

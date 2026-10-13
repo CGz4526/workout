@@ -1,10 +1,18 @@
 import Dexie, { type EntityTable } from 'dexie'
-import { DEFAULT_SETS, type Exercise, type WorkoutTemplate, type WorkoutSession } from '../types'
+import {
+  DEFAULT_SETS,
+  type BodyWeight,
+  type Exercise,
+  type WorkoutTemplate,
+  type WorkoutSession,
+} from '../types'
+import { localDateKeyOf } from '../lib/date'
 
 const db = new Dexie('WorkoutDB') as Dexie & {
   exercises: EntityTable<Exercise, 'id'>
   templates: EntityTable<WorkoutTemplate, 'id'>
   sessions: EntityTable<WorkoutSession, 'id'>
+  weights: EntityTable<BodyWeight, 'date'>
 }
 
 const DEFAULT_EXERCISES: Exercise[] = [
@@ -170,6 +178,33 @@ db.version(2)
         items: t.items.map((item) => ({ ...item, defaultSets: DEFAULT_SETS })),
       }))
     if (changed.length > 0) await table.bulkPut(changed)
+  })
+
+// v3：新增 weights 表（按本地日期一天一条的每日体重）。
+// 之前体重只能挂在某条训练记录上，等于「没训练就记不了体重」。
+// 这里把历史 sessions 里的 weight 迁进 weights，统计页的体重趋势不会断。
+// 同一天多条记录都填了体重时，日期靠后的那条覆盖前面的（取最近一次称重）。
+db.version(3)
+  .stores({
+    exercises: 'id, bodyPart',
+    templates: 'id',
+    sessions: 'id, date',
+    weights: 'date',
+  })
+  .upgrade(async (tx) => {
+    const sessions = (await tx.table('sessions').toArray()) as WorkoutSession[]
+    const withWeight = sessions
+      .filter((s) => typeof s.weight === 'number' && Number.isFinite(s.weight) && localDateKeyOf(s.date))
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    const rows = new Map<string, BodyWeight>()
+    for (const s of withWeight) {
+      rows.set(localDateKeyOf(s.date), {
+        date: localDateKeyOf(s.date),
+        weight: s.weight as number,
+        updatedAt: 0,
+      })
+    }
+    if (rows.size > 0) await tx.table('weights').bulkPut([...rows.values()])
   })
 
 export async function initDB() {

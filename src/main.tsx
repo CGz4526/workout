@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
 import { initDB } from './db'
+import { ensureAutoRestDay } from './lib/restDay'
 
 initDB()
   .catch((err) => {
@@ -15,3 +16,9 @@ initDB()
       </StrictMode>,
     )
   })
+
+// 打开 App 时补一次「昨天的休息日」。放在 render 之后，不占首屏时间；
+// 失败只影响这条补录，绝不能拖垮启动（Dexie 会自动等库打开后再执行）。
+ensureAutoRestDay().catch((err) => {
+  console.error('自动补休息日失败', err)
+})

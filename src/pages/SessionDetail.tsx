@@ -7,6 +7,7 @@ import { BODY_PARTS, type BodyPart, type ExerciseRecord, type WorkoutSession } f
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
+import { getDayWeight, setDayWeight } from '../lib/weight'
 
 const MAX_PHOTOS = 3
 
@@ -44,7 +45,7 @@ export default function SessionDetail() {
 
   useEffect(() => {
     if (!sessionId) return
-    db.sessions.get(sessionId).then((raw) => {
+    db.sessions.get(sessionId).then(async (raw) => {
       if (!raw) {
         navigate('/history')
         return
@@ -53,7 +54,10 @@ export default function SessionDetail() {
 
       const localDate = toLocalInput(new Date(s.date))
       const localDuration = Math.floor(s.duration / 60).toString()
-      const localWeight = s.weight?.toString() ?? ''
+      // 当天可能已经在首页记过体重（那天还没有训练记录），所以以「按天存」的
+      // weights 为准，session.weight 只是旧数据的兜底。
+      const dayWeight = await getDayWeight(s.date)
+      const localWeight = (dayWeight ?? s.weight)?.toString() ?? ''
       const localDistance = s.distance?.toString() ?? ''
 
       setSession(s)
@@ -115,6 +119,12 @@ export default function SessionDetail() {
 
     await db.sessions.update(sessionId, patch)
     setExercises(cleaned)
+    // 体重按「天」存在 weights 表（没训练的日子也能记）。日期被改过时，
+    // 这份体重要跟着新日期走，否则新日期的详情页会看不到它。
+    if (!initial || weight !== initial.weight) {
+      const kg = Number(weight)
+      await setDayWeight(patch.date ?? session?.date ?? '', weight && Number.isFinite(kg) ? kg : undefined)
+    }
     initialRef.current = { date, duration, weight, distance }
     setEditing(false)
   }
@@ -362,7 +372,10 @@ export default function SessionDetail() {
               onBlur={async () => {
                 if (sessionId) {
                   const kg = Number(weight)
-                  await db.sessions.update(sessionId, { weight: weight && Number.isFinite(kg) ? kg : undefined })
+                  const finalKg = weight && Number.isFinite(kg) ? kg : undefined
+                  // session.weight 是冗余镜像，weights 才是按天存的真身
+                  await db.sessions.update(sessionId, { weight: finalKg })
+                  if (session?.date) await setDayWeight(session.date, finalKg)
                 }
               }}
               placeholder="输入体重"

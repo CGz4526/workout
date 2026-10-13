@@ -3,10 +3,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { TrendingUp, Calendar, Activity, Dumbbell, ChevronLeft, ChevronRight, ChartColumn } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type Exercise, type WorkoutSession } from '../types'
+import { BODY_PARTS, type BodyWeight, type Exercise, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
+import { localNoonOf, toLocalDateKey } from '../lib/date'
 
 type TimeRange = '1w' | '1m' | '3m'
 
@@ -67,6 +68,7 @@ const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 // 用模块级常量兜底，身份才稳定。
 const EMPTY_SESSIONS: WorkoutSession[] = []
 const EMPTY_EXERCISES: Exercise[] = []
+const EMPTY_WEIGHTS: BodyWeight[] = []
 
 export default function Stats() {
   const sessions = useLiveQuery(() =>
@@ -75,6 +77,8 @@ export default function Stats() {
     )
   ) ?? EMPTY_SESSIONS
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? EMPTY_EXERCISES
+  // 按天一条的体重记录（没训练的日子也有），是体重趋势的真身
+  const dayWeights = useLiveQuery(() => db.weights.toArray()) ?? EMPTY_WEIGHTS
 
   const [timeRange, setTimeRange] = useState<TimeRange>('1w')
   const [calMonth, setCalMonth] = useState(() => {
@@ -154,15 +158,29 @@ export default function Stats() {
     now.setHours(23, 59, 59, 999)
     const daysAgo = (date: Date) => Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
 
-    return filteredSessions
-      .filter((s) => s.weight)
-      .map((s) => ({
-        daysAgo: daysAgo(new Date(s.date)),
-        label: new Date(s.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+    // 按本地日期去重。weights 表是真身（含没有训练的早上记的体重），
+    // session.weight 只作兜底——同一天有两条时 weights 覆盖前者。
+    const byDay = new Map<string, { daysAgo: number; label: string; weight: number }>()
+    for (const s of filteredSessions) {
+      if (typeof s.weight !== 'number') continue
+      const d = new Date(s.date)
+      if (Number.isNaN(d.getTime())) continue
+      byDay.set(toLocalDateKey(d), {
+        daysAgo: daysAgo(d),
+        label: d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
         weight: s.weight,
-      }))
-      .sort((a, b) => b.daysAgo - a.daysAgo)
-  }, [filteredSessions])
+      })
+    }
+    for (const w of dayWeights) {
+      const d = localNoonOf(w.date)
+      byDay.set(w.date, {
+        daysAgo: daysAgo(d),
+        label: d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+        weight: w.weight,
+      })
+    }
+    return [...byDay.values()].sort((a, b) => b.daysAgo - a.daysAgo)
+  }, [filteredSessions, dayWeights])
 
   // Body part stats (count each part once per training day)
   const bodyPartData = useMemo(() => {

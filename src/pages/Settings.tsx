@@ -29,22 +29,25 @@ export default function Settings() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const buildBackup = async () => {
-    const [exercises, templates, sessions] = await Promise.all([
+    const [exercises, templates, sessions, weights] = await Promise.all([
       db.exercises.toArray(),
       db.templates.toArray(),
       db.sessions.toArray(),
+      db.weights.toArray(),
     ])
     return {
-      version: 1,
+      version: 2,
       exportDate: new Date().toISOString(),
       counts: {
         exercises: exercises.length,
         templates: templates.length,
         sessions: sessions.length,
+        weights: weights.length,
       },
       exercises,
       templates,
       sessions,
+      weights,
     }
   }
 
@@ -53,7 +56,7 @@ export default function Settings() {
       const data = await buildBackup()
       downloadJSON(`workout-backup-${toLocalDate(new Date())}.json`, data)
       alert(
-        `导出成功\n动作 ${data.counts.exercises} · 模板 ${data.counts.templates} · 训练记录 ${data.counts.sessions}\n请确认浏览器已开始下载该 JSON 文件。`
+        `导出成功\n动作 ${data.counts.exercises} · 模板 ${data.counts.templates} · 训练记录 ${data.counts.sessions} · 体重 ${data.counts.weights}\n请确认浏览器已开始下载该 JSON 文件。`
       )
     } catch (err) {
       console.error('导出失败', err)
@@ -73,8 +76,10 @@ export default function Settings() {
       const validTemplates =
         data.templates === undefined || Array.isArray(data.templates)
       const validSessions = Array.isArray(data.sessions)
+      // weights 是可选的：version 1 的旧备份没有这个字段，导入时保留现有体重记录
+      const validWeights = data.weights === undefined || Array.isArray(data.weights)
 
-      if (!data.version || !validExercises || !validTemplates || !validSessions) {
+      if (!data.version || !validExercises || !validTemplates || !validSessions || !validWeights) {
         alert('无效的备份文件')
         return
       }
@@ -90,7 +95,7 @@ export default function Settings() {
 
       // Write inside a transaction: if any step fails, Dexie rolls everything
       // back and the existing data is left untouched.
-      await db.transaction('rw', db.exercises, db.templates, db.sessions, async () => {
+      await db.transaction('rw', db.exercises, db.templates, db.sessions, db.weights, async () => {
         await db.exercises.clear()
         await db.templates.clear()
         await db.sessions.clear()
@@ -100,6 +105,11 @@ export default function Settings() {
           await db.templates.bulkAdd(data.templates)
         }
         if (data.sessions.length > 0) await db.sessions.bulkAdd(data.sessions)
+        // 旧备份（version 1）没有 weights：不动它，别把用户按天记的体重清掉
+        if (Array.isArray(data.weights)) {
+          await db.weights.clear()
+          if (data.weights.length > 0) await db.weights.bulkAdd(data.weights)
+        }
       })
 
       alert('导入成功')

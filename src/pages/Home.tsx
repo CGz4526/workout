@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
-import { Play, Clock, Zap, ChevronRight, Footprints, Target, Bike, Waves, Coffee, CalendarDays, Route, Dumbbell } from 'lucide-react'
+import { Play, Clock, Zap, ChevronRight, Footprints, Target, Bike, Waves, Coffee, CalendarDays, Route, Dumbbell, Scale } from 'lucide-react'
 import { db } from '../db'
 import type { ExerciseRecord } from '../types'
 import { bodyPartMeta } from '../lib/bodyParts'
+import { toLocalDateKey } from '../lib/date'
+import { setDayWeight } from '../lib/weight'
 import { normalizeSession } from '../lib/session'
 import { normalizeTemplate } from '../lib/template'
 import Header from '../components/Header'
@@ -69,6 +71,31 @@ export default function Home() {
   ) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
 
+  // 今日体重：早起称个体重、当天还没训练时也能记。
+  // 只用一次普通读库来回填，不用 useLiveQuery 订阅——否则用户每敲一个字，
+  // 库里旧值都会把输入框冲回原值。失焦/回车即存。
+  const todayKey = toLocalDateKey(new Date())
+  const [weightInput, setWeightInput] = useState('')
+  const [weightSaved, setWeightSaved] = useState(false)
+  const weightTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => {
+    db.weights.get(todayKey).then((w) => {
+      if (w) setWeightInput(String(w.weight))
+    })
+  }, [todayKey])
+
+  useEffect(() => () => { if (weightTimer.current) window.clearTimeout(weightTimer.current) }, [])
+
+  const saveWeight = async (raw: string) => {
+    const kg = Number(raw)
+    if (!raw.trim() || !Number.isFinite(kg) || kg <= 0 || kg > 500) return
+    await setDayWeight(new Date().toISOString(), kg)
+    setWeightSaved(true)
+    if (weightTimer.current) window.clearTimeout(weightTimer.current)
+    weightTimer.current = window.setTimeout(() => setWeightSaved(false), 2000)
+  }
+
   const today = new Date().toLocaleDateString('zh-CN', {
     month: 'long',
     day: 'numeric',
@@ -106,6 +133,31 @@ export default function Home() {
           <h2 className="text-[28px] leading-tight font-bold text-primary tracking-tight">
             今日训练<span className="text-accent">.</span>
           </h2>
+        </div>
+
+        {/* 今日体重：早起称了体重先记下来，不用等有训练记录 */}
+        <div className="mb-5 bg-surface-1 rounded-2xl border border-border shadow-card p-4 animate-rise-in">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-surface-2 flex items-center justify-center">
+              <Scale size={13} className="text-secondary" />
+            </span>
+            <h3 className="text-primary text-sm font-semibold tracking-wide">今日体重</h3>
+            {weightSaved && <span className="text-[10px] font-medium text-accent animate-rise-in">已记录</span>}
+          </div>
+          <div className="flex items-center gap-2 mt-2.5">
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              value={weightInput}
+              onChange={(e) => setWeightInput(e.target.value)}
+              onBlur={(e) => saveWeight(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+              placeholder="输入体重"
+              className="flex-1 min-w-0 bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted font-mono"
+            />
+            <span className="text-muted text-sm shrink-0">kg</span>
+          </div>
         </div>
 
         {/* Continue active workout */}
@@ -203,11 +255,8 @@ export default function Home() {
                     key={t.id}
                     onClick={() => navigate(`/template/${t.id}`)}
                     style={{ animationDelay: `${Math.min(idx, 8) * 0.04}s` }}
-                    className="group relative flex items-center gap-3.5 p-4 pl-5 bg-surface-1 rounded-2xl border border-border shadow-card tap-soft animate-pop-in overflow-hidden"
+                    className="group relative flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border shadow-card tap-soft animate-pop-in overflow-hidden"
                   >
-                    {/* 左侧一条与部位同色的色带：把「颜色」从图标扩展到整张卡片，
-                        一眼就能看出这是练哪个部位的，也让列表不再是清一色的灰。 */}
-                    <span className={`absolute left-0 top-0 bottom-0 w-1.5 bg-gradient-to-b ${meta.gradient}`} />
                     <div className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center shrink-0 shadow-md shadow-black/10`}>
                       <Icon size={19} className="text-white" />
                     </div>
@@ -245,9 +294,11 @@ export default function Home() {
                 const completedSets = s.exercises.reduce(
                   (sum, ex) => sum + ex.sets.filter((st) => st.completed).length, 0
                 )
-                // 有氧用蓝色、力量用主色，和首页上方的入口配色保持一致
+                // 有氧用蓝色、力量用主色、休息日中性色，和首页上方的入口配色保持一致
                 const isAerobic = s.aerobic === true
-                const Icon = isAerobic ? Route : Dumbbell
+                // 休息日：没跑计时器（无 startTime）、没有动作。自动补的休息日也走这里
+                const isRest = !isAerobic && s.exercises.length === 0 && !s.startTime
+                const Icon = isRest ? Coffee : isAerobic ? Route : Dumbbell
                 return (
                   <button
                     key={s.id}
@@ -255,8 +306,8 @@ export default function Home() {
                     style={{ animationDelay: `${Math.min(idx, 6) * 0.04}s` }}
                     className="group flex items-center gap-3.5 p-4 bg-surface-1 rounded-2xl border border-border shadow-card tap-soft animate-pop-in"
                   >
-                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isAerobic ? 'bg-blue-500/10' : 'bg-accent-soft'}`}>
-                      <Icon size={18} className={isAerobic ? 'text-blue-500 dark:text-blue-400' : 'text-accent'} />
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isRest ? 'bg-stone-500/10' : isAerobic ? 'bg-blue-500/10' : 'bg-accent-soft'}`}>
+                      <Icon size={18} className={isRest ? 'text-stone-500 dark:text-stone-400' : isAerobic ? 'text-blue-500 dark:text-blue-400' : 'text-accent'} />
                     </div>
                     <div className="flex-1 text-left min-w-0">
                       <p className="text-primary font-medium text-sm truncate">
@@ -265,9 +316,11 @@ export default function Home() {
                       <p className="text-muted text-xs mt-1 truncate">
                         {new Date(s.date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                         {' · '}
-                        {isAerobic
-                          ? `${formatDuration(s.duration)}${s.distance ? ` · ${s.distance}km` : ''}`
-                          : `${completedSets} 组 · ${formatDuration(s.duration)}`}
+                        {isRest
+                          ? '休息日'
+                          : isAerobic
+                            ? `${formatDuration(s.duration)}${s.distance ? ` · ${s.distance}km` : ''}`
+                            : `${completedSets} 组 · ${formatDuration(s.duration)}`}
                       </p>
                     </div>
                     <ChevronRight size={18} className="text-muted group-active:text-secondary transition-colors shrink-0" />
@@ -282,11 +335,11 @@ export default function Home() {
       {/* 「爬楼梯 / 爬坡」二选一。点遮罩或取消都不开始训练。 */}
       {choosingAerobic && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 pb-6"
           onClick={() => setChoosingAerobic(null)}
         >
           <div
-            className="w-full max-w-sm bg-surface-1 rounded-t-3xl border-t border-border px-4 pt-5 pb-8 animate-scale-in"
+            className="w-full max-w-sm bg-surface-1 rounded-3xl border-t border-border px-4 pt-5 pb-8 animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-primary font-semibold text-sm mb-3">这次练的是哪一种？</p>

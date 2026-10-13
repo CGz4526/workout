@@ -4,8 +4,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { ChevronRight, Calendar, Image, Trash2, Plus, Database, Play, Coffee, Dumbbell, Route } from 'lucide-react'
 import { db } from '../db'
 import Header from '../components/Header'
-import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
+import { localDateKeyOf } from '../lib/date'
 
 // 把「恢复一条已结束的记录」的写库逻辑放在组件外：
 // 它不依赖任何 state，属于业务逻辑而不是渲染逻辑；而且 react-hooks/purity
@@ -116,6 +116,16 @@ export default function History() {
       )
     ) ?? []
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
+  // 每日体重（weights 表是按本地日期一天一条的体重记录）。加载中是 undefined，
+  // 这里刻意不用 `?? []` 兜底：那会每次渲染造一个新数组。
+  const dayWeights = useLiveQuery(() => db.weights.toArray())
+
+  // 某天的体重：先看当天的体重记录（可能来自没有训练的早上），再退回记录自带的 weight。
+  const weightOf = (s: (typeof sessions)[0]): number | undefined => {
+    const key = localDateKeyOf(s.date)
+    if (!key) return s.weight
+    return dayWeights?.find((w) => w.date === key)?.weight ?? s.weight
+  }
 
   const getBodyParts = (s: typeof sessions[0]) => {
     if (s.aerobic) return null
@@ -258,17 +268,16 @@ export default function History() {
                   // finished after deleting every exercise still has startTime,
                   // and must not be silently relabelled as a rest day.
                   const isRest = !isAerobic && s.exercises.length === 0 && !s.startTime
-                  const completedSets = s.exercises.reduce(
-                    (sum, ex) => sum + ex.sets.filter((st) => st.completed).length, 0
-                  )
                   const photoCount = s.photos?.length ?? 0
                   const startTime = new Date(s.date).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
                   const bodyParts = getBodyParts(s)
-                  // 力量训练用一圈加粗的主色边框着重标出——历史列表里一眼就能
-                  // 数出「最近练了几次力量」。有氧与休息日保持中性细边，不抢视觉。
-                  const cardBorder = !isRest && !isAerobic
-                    ? 'border-2 border-accent/60'
-                    : 'border border-border'
+                  // 力量训练用一圈加粗的主色（绿）边框；有氧用一圈加粗的蓝色边框
+                  // （和有氧图标同色，列表里一眼区分类型）；休息日保持中性细边。
+                  const cardBorder = isRest
+                    ? 'border border-border'
+                    : isAerobic
+                      ? 'border-2 border-blue-500/60'
+                      : 'border-2 border-accent/60'
                   const iconBg = isRest ? 'bg-stone-500/10' : isAerobic ? 'bg-blue-500/10' : 'bg-accent-soft'
                   const iconColor = isRest
                     ? 'text-stone-500 dark:text-stone-400'
@@ -289,7 +298,7 @@ export default function History() {
                       onContinue={isRest ? undefined : () => handleContinue(s.id)}
                       onClick={() => navigate(`/session-detail/${s.id}`)}
                     >
-                      <div className="flex items-center gap-3.5 p-4">
+                      <div className="flex items-center gap-3.5 py-3 px-4">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBg}`}>
                           <RowIcon size={18} className={iconColor} />
                         </div>
@@ -299,46 +308,32 @@ export default function History() {
                               {isAerobic && s.duration > 0 && <span className="text-muted text-xs font-normal ml-2">{formatDuration(s.duration)}</span>}
                               {!isAerobic && !isRest && <span className="text-muted text-xs font-normal ml-2">{startTime} · {formatDuration(s.duration)}</span>}
                             </span>
-                            {s.weight && <span className="text-muted text-xs font-normal shrink-0 ml-2">体重：{s.weight}kg</span>}
+                            {weightOf(s) !== undefined && <span className="text-muted text-xs font-normal shrink-0 ml-2">体重：{weightOf(s)}kg</span>}
                           </p>
-                          <div className="mt-1">
-                            <p className="text-muted text-xs flex items-center justify-between gap-2">
-                              <span className="flex items-center gap-1.5 min-w-0">
-                                {isAerobic && s.distance ? (
-                                  <span className="truncate">{s.distance}km</span>
-                                ) : !isRest && !isAerobic ? (
-                                  <>
-                                    <span className="truncate">{s.exercises.length} 动作 · {completedSets} 组</span>
-                                    {photoCount > 0 && (
-                                      <span className="inline-flex items-center gap-0.5 shrink-0">
-                                        <Image size={10} />
-                                        {photoCount}
-                                      </span>
-                                    )}
-                                  </>
-                                ) : null}
+                          {/* 合并行：部位标签（统一单色）＋照片数＋距离＋饮食。
+                              删掉了「n 动作 · n 组」那行以压缩卡片高度，使其与有氧记录高度接近。 */}
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                            {bodyParts && bodyParts.length > 0 && bodyParts.map((part) => (
+                              <span key={part} className="text-[10px] px-1.5 py-0.5 rounded-md border border-border bg-surface-2 text-secondary">{part}</span>
+                            ))}
+                            {isAerobic && s.distance ? (
+                              <span className="text-muted text-[11px] shrink-0">{s.distance}km</span>
+                            ) : null}
+                            {!isAerobic && !isRest && photoCount > 0 && (
+                              <span className="inline-flex items-center gap-0.5 text-muted text-[10px] shrink-0">
+                                <Image size={10} />
+                                {photoCount}
                               </span>
-                              {s.diet && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${
-                                  s.diet === 'low' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
-                                  s.diet === 'mid' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
-                                  s.diet === 'high' ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400' :
-                                  'bg-red-500/15 text-red-600 dark:text-red-400'
-                                }`}>
-                                  {s.diet === 'low' ? '低碳' : s.diet === 'mid' ? '中碳' : s.diet === 'high' ? '高碳' : '放纵餐'}
-                                </span>
-                              )}
-                            </p>
-                            {/* 部位标签单独一行并允许换行：挤在上一行会被 overflow-hidden 裁掉半截 */}
-                            {bodyParts && bodyParts.length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                {bodyParts.map((part) => {
-                                  const m = bodyPartMeta(part)
-                                  return (
-                                    <span key={part} className={`text-[10px] px-1.5 py-0.5 rounded-md border ${m.soft} ${m.text} ${m.border}`}>{part}</span>
-                                  )
-                                })}
-                              </div>
+                            )}
+                            {s.diet && (
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium shrink-0 ${
+                                s.diet === 'low' ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' :
+                                s.diet === 'mid' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' :
+                                s.diet === 'high' ? 'bg-orange-500/15 text-orange-600 dark:text-orange-400' :
+                                'bg-red-500/15 text-red-600 dark:text-red-400'
+                              }`}>
+                                {s.diet === 'low' ? '低碳' : s.diet === 'mid' ? '中碳' : s.diet === 'high' ? '高碳' : '放纵餐'}
+                              </span>
                             )}
                           </div>
                         </div>
