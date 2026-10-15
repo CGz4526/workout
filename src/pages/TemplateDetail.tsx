@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Play, Plus, X, Check, GripVertical, Minus, Plus as PlusIcon } from 'lucide-react'
+import { Play, Plus, X, Check, GripVertical } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type WorkoutTemplate, type TemplateItem, type WorkoutSession } from '../types'
 import Header from '../components/Header'
@@ -9,6 +9,7 @@ import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeTemplate, stepItemCount } from '../lib/template'
 import { clampRestSeconds, resolveRestSeconds } from '../lib/rest'
 import RestField from '../components/RestField'
+import SetRepStepper from '../components/SetRepStepper'
 
 // 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
 type DragMeta = {
@@ -346,7 +347,7 @@ export default function TemplateDetail() {
                 {/* 入场动画放在内层：animate-fade-in 的 fill-mode 会一直占着
                     transform，放在外层会把拖拽的 translateY 顶掉 */}
                 <div
-                  className="flex items-center gap-2 pl-2 pr-1.5 py-3 animate-pop-in"
+                  className="flex items-center gap-2 pl-2 pr-1.5 pt-3 pb-2 animate-pop-in"
                   style={{ animationDelay: `${Math.min(idx, 8) * 0.03}s` }}
                 >
                   <button
@@ -362,17 +363,8 @@ export default function TemplateDetail() {
                   >
                     <GripVertical size={16} />
                   </button>
-                  <span className="w-5 text-center text-xs font-mono text-muted shrink-0">{shownIdx + 1}</span>
+                  <span className="w-5 text-center text-xs text-muted shrink-0 tabular-nums">{shownIdx + 1}</span>
                   <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
-                  <div className="flex items-center gap-0.5 bg-surface-2 rounded-lg px-1 py-0.5 shrink-0">
-                    <button onClick={() => stepItem(idx, 'defaultSets', -1)} aria-label="减少组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={13} /></button>
-                    <span className="text-primary text-xs w-5 text-center font-mono">{item.defaultSets}</span>
-                    <button onClick={() => stepItem(idx, 'defaultSets', 1)} aria-label="增加组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={13} /></button>
-                    <span className="text-muted text-xs px-0.5">×</span>
-                    <button onClick={() => stepItem(idx, 'defaultReps', -1)} aria-label="减少次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={13} /></button>
-                    <span className="text-primary text-xs w-6 text-center font-mono">{item.defaultReps}</span>
-                    <button onClick={() => stepItem(idx, 'defaultReps', 1)} aria-label="增加次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={13} /></button>
-                  </div>
                   {exMeta && (
                     <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${exMeta.soft} ${exMeta.text} ${exMeta.border}`}>
                       {ex!.bodyPart}
@@ -386,13 +378,19 @@ export default function TemplateDetail() {
                     <X size={16} />
                   </button>
                 </div>
-                <RestField
-                  className="mt-2.5 pt-2.5 border-t border-border/60"
-                  value={resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId))}
-                  overridden={typeof item.restSeconds === 'number'}
-                  onChange={(s) => setRest(idx, s)}
-                  onReset={() => resetRest(idx)}
-                />
+                <div className="mt-0.5 pt-2.5 pb-2.5 border-t border-border/60 px-2 space-y-2.5">
+                  <SetRepStepper
+                    sets={item.defaultSets}
+                    reps={item.defaultReps}
+                    onStep={(f, d) => stepItem(idx, f, d)}
+                  />
+                  <RestField
+                    value={resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId))}
+                    overridden={typeof item.restSeconds === 'number'}
+                    onChange={(s) => setRest(idx, s)}
+                    onReset={() => resetRest(idx)}
+                  />
+                </div>
               </div>
             )
           })}

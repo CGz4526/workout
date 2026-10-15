@@ -497,9 +497,10 @@ export default function ActiveWorkout() {
       ? Math.floor((now - session.startTime) / 1000)
       : 0
 
-    // 不足 1 分钟的训练直接丢弃，不留空记录。
+    // 不足 1 分钟的力量训练直接丢弃，不留空记录。
     // 休息日不走这条路径——它在 Home 就以 finished: true 建好，直接进详情页。
-    if (isTooShortToRecord(duration)) {
+    // 有氧豁免：爬几趟楼梯就是几十秒，把记录删掉反而是丢数据（用户要能事后手改时长）。
+    if (isTooShortToRecord(duration, { aerobic: session?.aerobic === true })) {
       await db.sessions.delete(sessionId)
       setDiscardedSeconds(duration)
       setFinished(true)
@@ -685,9 +686,9 @@ export default function ActiveWorkout() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {warmupCount > 0 && (
-                          <span className="text-amber-600 dark:text-amber-400 text-[10px] font-mono">热身 {warmupCount}</span>
+                          <span className="text-amber-600 dark:text-amber-400 text-[10px] tabular-nums">热身 {warmupCount}</span>
                         )}
-                        <span className="text-accent-light text-xs font-mono font-bold">{doneSets.length} 组</span>
+                        <span className="text-accent-light text-xs font-bold tabular-nums">{doneSets.length} 组</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5 ml-9">
@@ -731,7 +732,7 @@ export default function ActiveWorkout() {
       {!isAerobic && (
         <div className="px-4 py-3.5 border-b border-border">
           <div className="flex items-center justify-between text-xs mb-2.5">
-            <span className="text-secondary font-mono">{completedSets}/{totalSets} 组</span>
+            <span className="text-secondary tabular-nums">{completedSets}/{totalSets} 组</span>
             <span className="text-secondary">
               {exercises.filter((ex) => ex.sets.every((s) => s.completed)).length}/{exercises.length} 完成
             </span>
@@ -811,18 +812,22 @@ export default function ActiveWorkout() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-[1.9rem_1fr_1fr_2.6rem_auto] gap-1 items-center text-[10px] text-muted mb-1.5 px-0.5 uppercase tracking-wider">
+                {/* 最后一列必须定宽，不能写 auto：表头这格是空 span（宽 0），数据行那格是
+                    CheckButton（w-9 = 36px），用 auto 会让同一套 grid-cols 算出两套列宽——
+                    RPE 列整体右移 36px，标题和下面的格子对不上（实测 deltaCenter=36）。
+                    表头统一 text-center，与各列居中的内容对齐。 */}
+                <div className="grid grid-cols-[1.9rem_1fr_1fr_2.6rem_2.25rem] gap-1 items-center text-[10px] text-muted mb-1.5 px-0.5 uppercase tracking-wider text-center">
                   <span>组</span>
                   <span>重量</span>
                   <span>次数</span>
-                  <span className="text-center">RPE</span>
+                  <span>RPE</span>
                   <span />
                 </div>
 
                 {ex.sets.map((set, setIdx) => (
                   <div
                     key={setIdx}
-                    className={`grid grid-cols-[1.9rem_1fr_1fr_2.6rem_auto] gap-1 items-center py-2 px-0.5 rounded-xl transition-colors duration-200 ${
+                    className={`grid grid-cols-[1.9rem_1fr_1fr_2.6rem_2.25rem] gap-1 items-center py-2 px-0.5 rounded-xl transition-colors duration-200 ${
                       set.warmup ? 'bg-amber-500/[0.05]' : set.completed ? 'bg-accent/[0.06]' : ''
                     }`}
                   >

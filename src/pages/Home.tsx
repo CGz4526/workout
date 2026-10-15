@@ -10,6 +10,7 @@ import { setDayWeight } from '../lib/weight'
 import { normalizeSession } from '../lib/session'
 import { normalizeTemplate } from '../lib/template'
 import { countedSets } from '../lib/set'
+import { CLIMB_CHOICES } from '../lib/aerobic'
 import Header from '../components/Header'
 
 // 有氧入口。带 `choices` 的卡片点开后会先问「具体是哪一项」——
@@ -31,7 +32,7 @@ const AEROBIC_ENTRIES: {
     icon: Footprints,
     soft: 'bg-purple-500/10',
     color: 'text-purple-500 dark:text-purple-400',
-    choices: ['爬楼梯', '爬坡'],
+    choices: CLIMB_CHOICES,
   },
 ]
 

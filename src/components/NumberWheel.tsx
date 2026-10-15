@@ -191,11 +191,14 @@ export default function NumberWheel({
                   className="snap-center w-full flex items-center justify-center transition-all duration-150"
                   style={{ height: ITEM_H }}
                 >
+                  {/* 用 tabular-nums 而不是 font-mono：RestField 传的 format 是 formatRest，
+                      返回「2分30秒」含中文，而 mono 字体栈里没有 CJK 字形——数字和汉字会落成
+                      两种字体，一行里很突兀。等宽数字的效果靠 tabular-nums 保住，不损失什么。 */}
                   <span
                     className={
                       i === idx
-                        ? 'text-primary text-2xl font-bold font-mono'
-                        : 'text-muted text-lg font-mono'
+                        ? 'text-primary text-2xl font-bold tabular-nums'
+                        : 'text-muted text-lg tabular-nums'
                     }
                   >
                     {label(v)}

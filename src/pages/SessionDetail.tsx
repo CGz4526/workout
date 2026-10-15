@@ -500,10 +500,10 @@ export default function SessionDetail() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {warmupCount > 0 && (
-                    <span className="text-amber-600 dark:text-amber-400 text-[10px] font-mono">热身 {warmupCount}</span>
+                    <span className="text-amber-600 dark:text-amber-400 text-[10px] tabular-nums">热身 {warmupCount}</span>
                   )}
                   {(ex.restSeconds ?? def?.restSeconds) != null && (
-                    <span className="text-muted text-[10px] font-mono">歇 {formatRest(ex.restSeconds ?? def?.restSeconds)}</span>
+                    <span className="text-muted text-[10px] tabular-nums">歇 {formatRest(ex.restSeconds ?? def?.restSeconds)}</span>
                   )}
                   {editing && (
                     <div className="flex items-center gap-1">
@@ -524,7 +524,7 @@ export default function SessionDetail() {
                 {ex.sets.map((set, setIdx) => (
                   <div key={setIdx} className={`flex items-center gap-2 ${set.warmup ? 'opacity-60' : ''}`}>
                     {set.warmup ? (
-                      <span className="text-amber-600 dark:text-amber-400 text-[10px] w-4 font-mono font-bold">热</span>
+                      <span className="text-amber-600 dark:text-amber-400 text-[10px] w-4 font-bold">热</span>
                     ) : (
                       <span className="text-muted text-xs w-4 font-mono">{setIdx + 1}</span>
                     )}
@@ -535,7 +535,7 @@ export default function SessionDetail() {
                           value={set.weight ?? ''}
                           onChange={(e) => updateSet(exIdx, setIdx, 'weight', e.target.value ? Number(e.target.value) : undefined)}
                           placeholder="重量"
-                          className="flex-1 bg-surface-2 text-primary text-center py-1.5 rounded-lg text-xs outline-none border border-border font-mono placeholder:text-muted"
+                          className="flex-1 min-w-0 bg-surface-2 text-primary text-center py-1.5 rounded-lg text-xs outline-none border border-border font-mono placeholder:text-muted"
                         />
                         <span className="text-muted text-xs">kg</span>
                         <input
@@ -543,7 +543,7 @@ export default function SessionDetail() {
                           value={set.reps ?? ''}
                           onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value ? Number(e.target.value) : undefined)}
                           placeholder="次数"
-                          className="flex-1 bg-surface-2 text-primary text-center py-1.5 rounded-lg text-xs outline-none border border-border font-mono placeholder:text-muted"
+                          className="flex-1 min-w-0 bg-surface-2 text-primary text-center py-1.5 rounded-lg text-xs outline-none border border-border font-mono placeholder:text-muted"
                         />
                         <span className="text-muted text-xs">次</span>
                         <input

@@ -38,7 +38,7 @@ export default function RestField({ value, overridden, onChange, onReset, classN
         <Timer size={13} className="text-muted shrink-0" />
         <span className="text-xs text-secondary shrink-0">组间歇</span>
         {!overridden && <span className="text-[10px] text-muted/70 truncate">跟随动作库</span>}
-        <span className="ml-auto text-primary text-xs font-mono shrink-0">{formatRest(value)}</span>
+        <span className="ml-auto text-primary text-xs tabular-nums shrink-0">{formatRest(value)}</span>
         <ChevronRight size={14} className="text-muted shrink-0 -mr-0.5" />
       </button>
 

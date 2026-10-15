@@ -12,9 +12,13 @@ export const MIN_SESSION_SECONDS = 60
  * duration 为 0 表示「时长未知」——手动补录时用户可能根本不记得练了多久，
  * 这种记录是合法的，不能拿 0 去和门槛比。
  * 只有「明确记录了时长、但不足 1 分钟」才拦。
+ *
+ * `opts.aerobic` 为 true 时豁免：有氧练几十秒是正常的（爬几趟楼梯就下楼了），
+ * 而且用户常常先建一条短记录、之后再回详情页把时长改成实际值——被门槛拦掉就
+ * 永远建不出来。有氧的误触成本也低，它不参与容量统计。
  */
-export const isTooShortToRecord = (seconds: number) =>
-  Number.isFinite(seconds) && seconds > 0 && seconds < MIN_SESSION_SECONDS
+export const isTooShortToRecord = (seconds: number, opts?: { aerobic?: boolean }) =>
+  !opts?.aerobic && Number.isFinite(seconds) && seconds > 0 && seconds < MIN_SESSION_SECONDS
 
 /**
  * 是不是一个「像记录」的对象。

@@ -180,7 +180,7 @@ export default function Exercises() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 mt-2 ml-12 text-[10px] text-muted">
-                      <span className="font-mono">歇 {formatRest(ex.restSeconds)}</span>
+                      <span className="tabular-nums">歇 {formatRest(ex.restSeconds)}</span>
                       {ex.description && (
                         <span className="flex items-center gap-1 min-w-0 truncate">
                           <Info size={10} className="shrink-0" />
