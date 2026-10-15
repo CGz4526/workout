@@ -41,12 +41,6 @@ export function formatRest(seconds: number | undefined | null): string {
   return `${m}分${rest}秒`
 }
 
-/** 步进器用：在 value 基础上加减 delta 秒后夹住。步长 15 秒。 */
-export function stepRestSeconds(value: unknown, delta: number): number {
-  const base = typeof value === 'number' && Number.isFinite(value) ? value : DEFAULT_REST_SECONDS
-  return clampRestSeconds(Math.round(base) + delta)
-}
-
 /**
  * 解析某个动作在某次训练里的组间歇。
  *

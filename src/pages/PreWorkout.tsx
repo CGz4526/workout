@@ -7,7 +7,8 @@ import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type ExerciseRec
 import Header from '../components/Header'
 import { type CountField, stepItemCount } from '../lib/template'
 import { bodyPartMeta } from '../lib/bodyParts'
-import { formatRest, resolveRestSeconds, stepRestSeconds } from '../lib/rest'
+import { clampRestSeconds, resolveRestSeconds } from '../lib/rest'
+import RestField from '../components/RestField'
 
 export default function PreWorkout() {
   const navigate = useNavigate()
@@ -53,21 +54,17 @@ export default function PreWorkout() {
     )
   }
 
-  // 同 Templates.tsx：不填则回落到动作库的值，首次步进要把回落值写实。
-  const updateRest = (idx: number, delta: number) => {
+  // 同 Templates.tsx：不填则回落到动作库的值，所以写入的只是「本次覆盖」。
+  const setRest = (idx: number, seconds: number) => {
     setItems(
       items.map((item, i) =>
-        i === idx
-          ? {
-              ...item,
-              restSeconds: stepRestSeconds(
-                resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId)),
-                delta,
-              ),
-            }
-          : item
+        i === idx ? { ...item, restSeconds: clampRestSeconds(seconds) } : item
       )
     )
+  }
+
+  const resetRest = (idx: number) => {
+    setItems(items.map((item, i) => (i === idx ? { ...item, restSeconds: undefined } : item)))
   }
 
   const removeItem = (idx: number) => {
@@ -135,14 +132,13 @@ export default function PreWorkout() {
                     </div>
                     <button onClick={() => removeItem(idx)} aria-label={`删除 ${item.exerciseName}`} className="p-2 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 tap"><Trash2 size={15} /></button>
                   </div>
-                  <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-border/60">
-                    <span className="text-[10px] text-muted">组间歇</span>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => updateRest(idx, -15)} aria-label="减少组间歇" className="p-1 rounded-md text-muted active:bg-surface-3 tap"><Minus size={11} /></button>
-                      <span className="text-secondary text-[10px] w-14 text-center font-mono">{formatRest(resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId)))}</span>
-                      <button onClick={() => updateRest(idx, 15)} aria-label="增加组间歇" className="p-1 rounded-md text-muted active:bg-surface-3 tap"><PlusIcon size={11} /></button>
-                    </div>
-                  </div>
+                  <RestField
+                    className="mt-2.5 pt-2.5 border-t border-border/60"
+                    value={resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId))}
+                    overridden={typeof item.restSeconds === 'number'}
+                    onChange={(s) => setRest(idx, s)}
+                    onReset={() => resetRest(idx)}
+                  />
                 </div>
               )
             })}

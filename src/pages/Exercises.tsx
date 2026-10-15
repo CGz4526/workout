@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus, Trash2, Edit3, X, Check, Minus, Plus as PlusIcon, Info } from 'lucide-react'
+import { Plus, Trash2, Edit3, X, Check, Info } from 'lucide-react'
 import { db } from '../db'
 import { BODY_PARTS, DEFAULT_REST_SECONDS, type BodyPart, type Exercise } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { clampRestSeconds, formatRest } from '../lib/rest'
+import RestField from '../components/RestField'
 
 const MAX_TIPS_LENGTH = 200
 
@@ -126,28 +127,8 @@ export default function Exercises() {
             </button>
           </div>
 
-          <div className="flex items-center justify-between bg-surface-2 rounded-xl px-3 py-2 border border-border">
-            <div className="min-w-0">
-              <p className="text-primary text-xs font-medium">组间歇</p>
-              <p className="text-muted text-[10px] mt-0.5">模板里可单独覆盖</p>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                onClick={() => setFormRest((v) => clampRestSeconds(v - 15))}
-                aria-label="减少组间歇"
-                className="p-1.5 rounded-md text-secondary active:bg-surface-3 tap"
-              >
-                <Minus size={13} />
-              </button>
-              <span className="text-primary text-xs w-16 text-center font-mono">{formatRest(formRest)}</span>
-              <button
-                onClick={() => setFormRest((v) => clampRestSeconds(v + 15))}
-                aria-label="增加组间歇"
-                className="p-1.5 rounded-md text-secondary active:bg-surface-3 tap"
-              >
-                <PlusIcon size={13} />
-              </button>
-            </div>
+          <div className="bg-surface-2 rounded-xl px-3 py-2.5 border border-border">
+            <RestField value={formRest} overridden onChange={setFormRest} />
           </div>
 
           <textarea

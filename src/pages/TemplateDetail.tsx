@@ -7,7 +7,8 @@ import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type WorkoutTemp
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeTemplate, stepItemCount } from '../lib/template'
-import { formatRest, resolveRestSeconds, stepRestSeconds } from '../lib/rest'
+import { clampRestSeconds, resolveRestSeconds } from '../lib/rest'
+import RestField from '../components/RestField'
 
 // 拖拽调序的状态。列表行高一致，所以目标槽位可以直接由位移除以 step 算出来。
 type DragMeta = {
@@ -131,19 +132,23 @@ export default function TemplateDetail() {
   }
 
   // 组间歇同理，走同一套 400ms 防抖自动保存。
-  // 同 Templates.tsx：不填则回落到动作库的值，首次步进要把回落值写实。
-  const stepRest = (idx: number, delta: number) => {
+  // 同 Templates.tsx：写入的只是「本模板显式覆盖」的值，不填则回落到动作库。
+  const setRest = (idx: number, seconds: number) => {
     setItems((prev) => {
       const item = prev[idx]
       if (!item) return prev
       const next = [...prev]
-      next[idx] = {
-        ...item,
-        restSeconds: stepRestSeconds(
-          resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId)),
-          delta,
-        ),
-      }
+      next[idx] = { ...item, restSeconds: clampRestSeconds(seconds) }
+      return next
+    })
+  }
+
+  const resetRest = (idx: number) => {
+    setItems((prev) => {
+      const item = prev[idx]
+      if (!item) return prev
+      const next = [...prev]
+      next[idx] = { ...item, restSeconds: undefined }
       return next
     })
   }
@@ -381,14 +386,13 @@ export default function TemplateDetail() {
                     <X size={16} />
                   </button>
                 </div>
-                <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-border/60">
-                  <span className="text-[10px] text-muted">组间歇</span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => stepRest(idx, -15)} aria-label="减少组间歇" className="p-1 rounded-md text-muted active:bg-surface-3 tap"><Minus size={11} /></button>
-                    <span className="text-secondary text-[10px] w-14 text-center font-mono">{formatRest(resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId)))}</span>
-                    <button onClick={() => stepRest(idx, 15)} aria-label="增加组间歇" className="p-1 rounded-md text-muted active:bg-surface-3 tap"><PlusIcon size={11} /></button>
-                  </div>
-                </div>
+                <RestField
+                  className="mt-2.5 pt-2.5 border-t border-border/60"
+                  value={resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId))}
+                  overridden={typeof item.restSeconds === 'number'}
+                  onChange={(s) => setRest(idx, s)}
+                  onReset={() => resetRest(idx)}
+                />
               </div>
             )
           })}

@@ -4,8 +4,22 @@ import { Gauge, Keyboard as KeyboardIcon } from 'lucide-react'
 // 一行的高度。中选行的位置和「第 i 项该滚到哪里」都按它算，改这一个值即可。
 const ITEM_H = 44
 
+/** 在候选值里找离 v 最近的一项的下标。库里可能有不在步长网格上的历史值。 */
+function nearestIndex(v: number | undefined, values: number[]): number {
+  if (v === undefined) return 0
+  let best = Infinity
+  let idx = 0
+  values.forEach((x, i) => {
+    const d = Math.abs(x - v)
+    if (d < best) {
+      best = d
+      idx = i
+    }
+  })
+  return idx
+}
+
 export interface NumberWheelProps {
-  open: boolean
   title: string
   value: number | undefined
   min: number
@@ -18,6 +32,8 @@ export interface NumberWheelProps {
   format?: (v: number) => string
   /** 允许留空（重量可以空着 = 自重），底部多一个「清空」 */
   clearable?: boolean
+  /** 「清空」按钮的文案。组间歇用它说「恢复默认」，语义比「清空」准确。 */
+  clearLabel?: string
   onClose: () => void
   onConfirm: (v: number | undefined) => void
 }
@@ -25,11 +41,15 @@ export interface NumberWheelProps {
 /**
  * iOS 风格的滚轮数字选择器（底部浮层）。
  *
- * 主交互是滑动选择；右上角可切到「键盘」直接输入（用户要的是「滑动优先、输入次之」）。
+ * 主交互是滑动选择；底部可切到「键盘」直接输入（用户要的是「滑动优先、输入次之」）。
  * 滚轮用 CSS scroll-snap 实现，不引第三方依赖——iOS Safari 16+ 支持良好。
+ *
+ * **本组件只在打开时才挂载**（调用方写 `{open && <NumberWheel …/>}`），
+ * 所以初始值可以直接由 props 推出来，不需要「打开时重置 state」那种 effect
+ * ——在 effect 里同步 setState 会被 react-hooks/set-state-in-effect 拦下，
+ * 而且那本来就是级联渲染。关闭时直接卸载，省掉清理逻辑。
  */
 export default function NumberWheel({
-  open,
   title,
   value,
   min,
@@ -38,6 +58,7 @@ export default function NumberWheel({
   unit,
   format,
   clearable,
+  clearLabel = '清空',
   onClose,
   onConfirm,
 }: NumberWheelProps) {
@@ -47,43 +68,29 @@ export default function NumberWheel({
     return Array.from({ length: n + 1 }, (_, i) => Math.round((min + i * step) * 100) / 100)
   }, [min, max, step])
 
-  const [idx, setIdx] = useState(0)
+  const [idx, setIdx] = useState(() => nearestIndex(value, values))
   const [keyboard, setKeyboard] = useState(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => (value === undefined ? '' : String(value)))
   const listRef = useRef<HTMLDivElement | null>(null)
   const stopRef = useRef<number | null>(null)
   const readyRef = useRef(false)
+  // 挂载时该滚到哪一格。用 ref 存住，免得把它写进 effect 依赖里
+  // ——那会让用户每滑一格就被拽回原位。
+  const mountIdxRef = useRef(idx)
 
-  // 打开时：定位到当前值（取最接近的一项，库里可能有不在步长网格上的历史值）
+  // 把列表滚到当前值。这是「把 React 状态写进 DOM」，不是 setState，放 effect 里正合适。
   useEffect(() => {
-    if (!open) return
-    let target = 0
-    if (value !== undefined) {
-      let best = Infinity
-      values.forEach((v, i) => {
-        const d = Math.abs(v - value)
-        if (d < best) {
-          best = d
-          target = i
-        }
-      })
+    const el = listRef.current
+    if (el) el.scrollTop = mountIdxRef.current * ITEM_H
+    // 程序化滚动也会触发 scroll 事件，先让它们消化掉再开始监听
+    const t = window.setTimeout(() => {
+      readyRef.current = true
+    }, 90)
+    return () => {
+      window.clearTimeout(t)
+      if (stopRef.current) window.clearTimeout(stopRef.current)
     }
-    setIdx(target)
-    setKeyboard(false)
-    setDraft(value === undefined ? '' : String(value))
-    readyRef.current = false
-    const raf = requestAnimationFrame(() => {
-      const el = listRef.current
-      if (el) el.scrollTop = target * ITEM_H
-      // 程序化滚动也会触发 scroll 事件，先让它们消化掉再开始监听
-      window.setTimeout(() => {
-        readyRef.current = true
-      }, 90)
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [open, value, values])
-
-  useEffect(() => () => { if (stopRef.current) window.clearTimeout(stopRef.current) }, [])
+  }, [])
 
   // 滚动停止（110ms 无新事件）后再更新中选值，避免滚动过程中疯狂重渲染
   const onScroll = () => {
@@ -123,7 +130,6 @@ export default function NumberWheel({
     onClose()
   }
 
-  if (!open) return null
   const label = (v: number) => (format ? format(v) : String(v))
 
   return (
@@ -220,7 +226,7 @@ export default function NumberWheel({
               }}
               className="text-muted text-xs tap px-2.5 py-1.5 rounded-lg"
             >
-              清空
+              {clearLabel}
             </button>
           )}
         </div>

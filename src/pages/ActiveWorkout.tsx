@@ -6,6 +6,7 @@ import { db } from '../db'
 import { BODY_PARTS, MAX_RPE, MIN_RPE, type BodyPart, type ExerciseRecord, type SetRecord, type TemplateItem } from '../types'
 import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
+import NumberWheel from '../components/NumberWheel'
 import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
 import { useWakeLock } from '../lib/useWakeLock'
 import { isTooShortToRecord, normalizeSession } from '../lib/session'
@@ -16,6 +17,14 @@ import { clampRpe, isCountedSet } from '../lib/set'
 
 const REST_FALLBACK = 150
 const MAX_NOTES_LENGTH = 500
+
+// 训练页三个数字字段的滚轮参数。重量用 2.5kg 一档（杠铃片的最小组合），
+// 次数 1 下一档，RPE 半档——和各自的语义对齐。
+const WHEEL_CFG = {
+  weight: { title: '重量', min: 0, max: 600, step: 2.5, unit: 'kg' as string | undefined },
+  reps: { title: '次数', min: 1, max: 100, step: 1, unit: '次' as string | undefined },
+  rpe: { title: 'RPE', min: MIN_RPE, max: MAX_RPE, step: 0.5, unit: undefined as string | undefined },
+}
 
 // "上次成绩" 的日期前缀：只到「天」这一粒度就够了，精确到时分反而难读。
 function daysAgoLabel(dateStr: string) {
@@ -1055,6 +1064,25 @@ export default function ActiveWorkout() {
           结束训练
         </button>
       </div>
+
+      {/* 重量 / 次数 / RPE 的滚轮选择器。滑动选值为主，底部可切到键盘直接输入。
+          z-[70] 压在休息遮罩（z-50）之上：休息中顺手改一下上一组的 RPE 是常事。 */}
+      {wheel && (
+        <NumberWheel
+          title={WHEEL_CFG[wheel.field].title}
+          value={exercises[wheel.exIdx]?.sets[wheel.setIdx]?.[wheel.field]}
+          min={WHEEL_CFG[wheel.field].min}
+          max={WHEEL_CFG[wheel.field].max}
+          step={WHEEL_CFG[wheel.field].step}
+          unit={WHEEL_CFG[wheel.field].unit}
+          clearable
+          onClose={() => setWheel(null)}
+          onConfirm={(v) => {
+            if (!wheel) return
+            updateSet(wheel.exIdx, wheel.setIdx, wheel.field, wheel.field === 'rpe' ? clampRpe(v) : v)
+          }}
+        />
+      )}
     </div>
   )
 }
