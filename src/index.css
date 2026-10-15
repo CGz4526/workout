@@ -162,6 +162,16 @@
   animation: fade-in 0.3s var(--ease-soft) backwards;
 }
 
+/* 底部浮层（数字滚轮选择器）从屏幕下方滑入 */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@utility animate-sheet-up {
+  animation: sheet-up 0.32s var(--ease-soft) backwards;
+}
+
 @utility animate-scale-in {
   animation: scale-in 0.28s var(--ease-soft) backwards;
 }

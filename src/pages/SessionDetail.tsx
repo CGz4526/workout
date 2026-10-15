@@ -3,13 +3,16 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Camera, X, Clock, Dumbbell, ListChecks, Plus, Trash2, Check, Route } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type ExerciseRecord, type WorkoutSession } from '../types'
+import { BODY_PARTS, MAX_RPE, MIN_RPE, type BodyPart, type ExerciseRecord, type WorkoutSession } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
 import { getDayWeight, setDayWeight } from '../lib/weight'
+import { clampRpe, countedSets } from '../lib/set'
+import { formatRest } from '../lib/rest'
 
 const MAX_PHOTOS = 3
+const MAX_NOTES_LENGTH = 500
 
 const toLocalInput = (d: Date) => {
   const pad = (n: number) => n.toString().padStart(2, '0')
@@ -29,6 +32,7 @@ export default function SessionDetail() {
   const [distance, setDistance] = useState<string>('')
   const [date, setDate] = useState<string>('')
   const [exercises, setExercises] = useState<ExerciseRecord[]>([])
+  const [notes, setNotes] = useState('')
   const [editing, setEditing] = useState(false)
   const [selectingExercise, setSelectingExercise] = useState(false)
   const [selectTab, setSelectTab] = useState<BodyPart>('肩')
@@ -67,6 +71,7 @@ export default function SessionDetail() {
       setDistance(localDistance)
       setDate(localDate)
       setExercises(s.exercises)
+      setNotes(s.notes ?? '')
 
       initialRef.current = {
         date: localDate,
@@ -89,6 +94,7 @@ export default function SessionDetail() {
     const patch: Partial<WorkoutSession> = {
       exercises: cleaned,
       templateName: session?.templateName,
+      notes: notes.trim() || undefined,
     }
     const initial = initialRef.current
 
@@ -174,7 +180,7 @@ export default function SessionDetail() {
     ))
   }
 
-  const updateSet = (exIdx: number, setIdx: number, field: 'weight' | 'reps', value: number | undefined) => {
+  const updateSet = (exIdx: number, setIdx: number, field: 'weight' | 'reps' | 'rpe', value: number | undefined) => {
     setExercises(exercises.map((ex, i) =>
       i === exIdx ? { ...ex, sets: ex.sets.map((s, j) => j === setIdx ? { ...s, [field]: value } : s) } : ex
     ))
@@ -258,7 +264,7 @@ export default function SessionDetail() {
     )
   }
 
-  const totalSets = exercises.reduce((sum, ex) => sum + ex.sets.length, 0)
+  const totalSets = countedSets(exercises)
 
   return (
     <div className="min-h-screen bg-surface-0 pb-24">
@@ -413,6 +419,22 @@ export default function SessionDetail() {
           </div>
         </div>
 
+        {/* Notes */}
+        <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card mb-4 animate-rise-in" style={{ animationDelay: '0.08s' }}>
+          <h3 className="text-primary font-semibold text-sm mb-3">训练备注</h3>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value.slice(0, MAX_NOTES_LENGTH))}
+            onBlur={async () => {
+              if (!sessionId) return
+              await db.sessions.update(sessionId, { notes: notes.trim() || undefined })
+            }}
+            placeholder="今天的状态、不适、器械调整…"
+            rows={2}
+            className="w-full bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted resize-none"
+          />
+        </div>
+
         {/* Photos */}
         <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card mb-4 animate-rise-in" style={{ animationDelay: '0.1s' }}>
           <div className="flex items-center justify-between mb-3">
@@ -456,9 +478,11 @@ export default function SessionDetail() {
 
         {/* Exercises */}
         <div className="space-y-3 animate-rise-in" style={{ animationDelay: '0.2s' }}>
-          {exercises.map((ex, exIdx) => (
-            <div key={exIdx} className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
-              <div className="flex items-center justify-between mb-3 gap-2">
+          {exercises.map((ex, exIdx) => {
+            const def = allExercises.find((e) => e.id === ex.exerciseId)
+            const warmupCount = ex.sets.filter((s) => s.warmup === true).length
+            return (
+            <div key={exIdx} className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">              <div className="flex items-center justify-between mb-1 gap-2">
                 <div className="flex items-center gap-2.5 flex-1 min-w-0">
                   <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
                     <span className="text-xs font-bold text-accent-light">{exIdx + 1}</span>
@@ -474,21 +498,36 @@ export default function SessionDetail() {
                     <span className="text-primary font-semibold text-sm truncate">{ex.exerciseName}</span>
                   )}
                 </div>
-                {editing && (
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => addSet(exIdx)} className="p-1.5 rounded-lg text-muted active:bg-surface-2">
-                      <Plus size={14} />
-                    </button>
-                    <button onClick={() => removeExercise(exIdx)} className="p-1.5 rounded-lg text-muted active:text-red-400 active:bg-red-500/10">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {warmupCount > 0 && (
+                    <span className="text-amber-600 dark:text-amber-400 text-[10px] font-mono">热身 {warmupCount}</span>
+                  )}
+                  {(ex.restSeconds ?? def?.restSeconds) != null && (
+                    <span className="text-muted text-[10px] font-mono">歇 {formatRest(ex.restSeconds ?? def?.restSeconds)}</span>
+                  )}
+                  {editing && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => addSet(exIdx)} className="p-1.5 rounded-lg text-muted active:bg-surface-2">
+                        <Plus size={14} />
+                      </button>
+                      <button onClick={() => removeExercise(exIdx)} className="p-1.5 rounded-lg text-muted active:text-red-400 active:bg-red-500/10">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+              {def?.description && (
+                <p className="text-muted text-[10px] leading-relaxed mb-2 ml-9">{def.description}</p>
+              )}
               <div className="ml-9 space-y-1.5">
                 {ex.sets.map((set, setIdx) => (
-                  <div key={setIdx} className="flex items-center gap-2">
-                    <span className="text-muted text-xs w-4 font-mono">{setIdx + 1}</span>
+                  <div key={setIdx} className={`flex items-center gap-2 ${set.warmup ? 'opacity-60' : ''}`}>
+                    {set.warmup ? (
+                      <span className="text-amber-600 dark:text-amber-400 text-[10px] w-4 font-mono font-bold">热</span>
+                    ) : (
+                      <span className="text-muted text-xs w-4 font-mono">{setIdx + 1}</span>
+                    )}
                     {editing ? (
                       <>
                         <input
@@ -507,6 +546,16 @@ export default function SessionDetail() {
                           className="flex-1 bg-surface-2 text-primary text-center py-1.5 rounded-lg text-xs outline-none border border-border font-mono placeholder:text-muted"
                         />
                         <span className="text-muted text-xs">次</span>
+                        <input
+                          type="number"
+                          min={MIN_RPE}
+                          max={MAX_RPE}
+                          step="0.5"
+                          value={set.rpe ?? ''}
+                          onChange={(e) => updateSet(exIdx, setIdx, 'rpe', e.target.value ? clampRpe(Number(e.target.value)) : undefined)}
+                          placeholder="RPE"
+                          className="w-14 bg-surface-2 text-primary text-center py-1.5 rounded-lg text-xs outline-none border border-border font-mono placeholder:text-muted"
+                        />
                         {ex.sets.length > 1 && (
                           <button onClick={() => removeSet(exIdx, setIdx)} className="p-1 text-muted active:text-red-400">
                             <X size={12} />
@@ -518,13 +567,17 @@ export default function SessionDetail() {
                         <span className="text-primary font-mono text-xs">{set.weight ? `${set.weight}kg` : '-'}</span>
                         <span className="text-muted text-xs">×</span>
                         <span className="text-primary font-mono text-xs">{set.reps ?? '-'}</span>
+                        {set.rpe != null && (
+                          <span className="text-muted text-[10px] font-mono">RPE {set.rpe}</span>
+                        )}
                       </>
                     )}
                   </div>
                 ))}
               </div>
             </div>
-          ))}
+            )
+          })}
 
           {editing && (
             <button

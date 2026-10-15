@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus, Trash2, Edit3, X, Check } from 'lucide-react'
+import { Plus, Trash2, Edit3, X, Check, Minus, Plus as PlusIcon, Info } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type Exercise } from '../types'
+import { BODY_PARTS, DEFAULT_REST_SECONDS, type BodyPart, type Exercise } from '../types'
 import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
+import { clampRestSeconds, formatRest } from '../lib/rest'
+
+const MAX_TIPS_LENGTH = 200
 
 export default function Exercises() {
   const [activeTab, setActiveTab] = useState<BodyPart>('肩')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formName, setFormName] = useState('')
+  const [formRest, setFormRest] = useState(DEFAULT_REST_SECONDS)
+  const [formTips, setFormTips] = useState('')
 
   const allExercises = useLiveQuery(() => db.exercises.toArray()) ?? []
   const exercises = allExercises
@@ -20,26 +25,42 @@ export default function Exercises() {
   const activeMeta = bodyPartMeta(activeTab)
   const ActiveIcon = activeMeta.icon
 
+  const resetForm = () => {
+    setFormName('')
+    setFormRest(DEFAULT_REST_SECONDS)
+    setFormTips('')
+    setEditingId(null)
+  }
+
   const handleSave = async () => {
-    if (!formName.trim()) return
+    const name = formName.trim()
+    if (!name) return
+    const tips = formTips.trim().slice(0, MAX_TIPS_LENGTH)
     if (editingId) {
-      await db.exercises.update(editingId, { name: formName.trim() })
+      await db.exercises.update(editingId, {
+        name,
+        restSeconds: clampRestSeconds(formRest),
+        description: tips || undefined,
+      })
     } else {
       await db.exercises.add({
         id: crypto.randomUUID(),
-        name: formName.trim(),
+        name,
         bodyPart: activeTab,
+        restSeconds: clampRestSeconds(formRest),
+        description: tips || undefined,
         createdAt: Date.now(),
       })
     }
-    setFormName('')
-    setEditingId(null)
+    resetForm()
     setShowForm(false)
   }
 
   const handleEdit = (ex: Exercise) => {
     setEditingId(ex.id)
     setFormName(ex.name)
+    setFormRest(clampRestSeconds(ex.restSeconds))
+    setFormTips(ex.description ?? '')
     setShowForm(true)
   }
 
@@ -52,13 +73,13 @@ export default function Exercises() {
       <Header
         title="动作库"
         rightAction={
-          <button
-            onClick={() => { setEditingId(null); setFormName(''); setShowForm(true) }}
-            aria-label="新增动作"
-            className="w-8 h-8 rounded-lg bg-accent-soft flex items-center justify-center active:bg-accent/20 transition-colors tap"
-          >
-            <Plus size={18} className="text-accent" />
-          </button>
+            <button
+              onClick={() => { resetForm(); setShowForm(true) }}
+              aria-label="新增动作"
+              className="w-8 h-8 rounded-lg bg-accent-soft flex items-center justify-center active:bg-accent/20 transition-colors tap"
+            >
+              <Plus size={18} className="text-accent" />
+            </button>
         }
       />
 
@@ -87,7 +108,7 @@ export default function Exercises() {
       </div>
 
       {showForm && (
-        <div className="mx-auto w-full max-w-lg px-4 py-3.5 border-b border-border bg-surface-1/50 animate-fade-in">
+        <div className="mx-auto w-full max-w-lg px-4 py-3.5 border-b border-border bg-surface-1/50 animate-fade-in space-y-3">
           <div className="flex items-center gap-2">
             <input
               autoFocus
@@ -100,10 +121,42 @@ export default function Exercises() {
             <button onClick={handleSave} aria-label="保存" className="w-10 h-10 rounded-xl bg-accent-soft flex items-center justify-center active:bg-accent/20 tap">
               <Check size={18} className="text-accent" />
             </button>
-            <button onClick={() => { setShowForm(false); setEditingId(null) }} aria-label="取消" className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center active:bg-surface-3 tap">
+            <button onClick={() => { setShowForm(false); resetForm() }} aria-label="取消" className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center active:bg-surface-3 tap">
               <X size={18} className="text-secondary" />
             </button>
           </div>
+
+          <div className="flex items-center justify-between bg-surface-2 rounded-xl px-3 py-2 border border-border">
+            <div className="min-w-0">
+              <p className="text-primary text-xs font-medium">组间歇</p>
+              <p className="text-muted text-[10px] mt-0.5">模板里可单独覆盖</p>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => setFormRest((v) => clampRestSeconds(v - 15))}
+                aria-label="减少组间歇"
+                className="p-1.5 rounded-md text-secondary active:bg-surface-3 tap"
+              >
+                <Minus size={13} />
+              </button>
+              <span className="text-primary text-xs w-16 text-center font-mono">{formatRest(formRest)}</span>
+              <button
+                onClick={() => setFormRest((v) => clampRestSeconds(v + 15))}
+                aria-label="增加组间歇"
+                className="p-1.5 rounded-md text-secondary active:bg-surface-3 tap"
+              >
+                <PlusIcon size={13} />
+              </button>
+            </div>
+          </div>
+
+          <textarea
+            value={formTips}
+            onChange={(e) => setFormTips(e.target.value.slice(0, MAX_TIPS_LENGTH))}
+            placeholder="动作要点（可选）· 如：肘部固定，拉到下巴高度"
+            rows={2}
+            className="w-full bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted resize-none"
+          />
         </div>
       )}
 
@@ -126,22 +179,33 @@ export default function Exercises() {
                 return (
                   <div
                     key={ex.id}
-                    className="flex items-center justify-between p-3.5 pl-4 bg-surface-1 rounded-2xl border border-border shadow-card animate-pop-in"
+                    className="p-3.5 pl-4 bg-surface-1 rounded-2xl border border-border shadow-card animate-pop-in"
                     style={{ animationDelay: `${Math.min(idx, 10) * 0.03}s` }}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${m.soft}`}>
-                        <RowIcon size={16} className={m.text} />
-                      </span>
-                      <span className="text-primary text-sm font-medium truncate">{ex.name}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${m.soft}`}>
+                          <RowIcon size={16} className={m.text} />
+                        </span>
+                        <span className="text-primary text-sm font-medium truncate">{ex.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => handleEdit(ex)} aria-label={`编辑 ${ex.name}`} className="p-2 rounded-lg text-muted active:bg-surface-2 transition-colors tap">
+                          <Edit3 size={15} />
+                        </button>
+                        <button onClick={() => handleDelete(ex.id)} aria-label={`删除 ${ex.name}`} className="p-2 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 transition-colors tap">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => handleEdit(ex)} aria-label={`编辑 ${ex.name}`} className="p-2 rounded-lg text-muted active:bg-surface-2 transition-colors tap">
-                        <Edit3 size={15} />
-                      </button>
-                      <button onClick={() => handleDelete(ex.id)} aria-label={`删除 ${ex.name}`} className="p-2 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 transition-colors tap">
-                        <Trash2 size={15} />
-                      </button>
+                    <div className="flex items-center gap-2 mt-2 ml-12 text-[10px] text-muted">
+                      <span className="font-mono">歇 {formatRest(ex.restSeconds)}</span>
+                      {ex.description && (
+                        <span className="flex items-center gap-1 min-w-0 truncate">
+                          <Info size={10} className="shrink-0" />
+                          <span className="truncate">{ex.description}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 )

@@ -54,11 +54,12 @@ src/
 - 生产地址：https://workout-app-681.pages.dev
 - wrangler 为全局安装，项目内没有 `wrangler.toml`
 
+**AI 可协助部署**（2026-10-15 起，覆盖此前「2026-10-12 起 AI 不碰部署」的约定）。
+凭据红线不变：**token 由用户在运行时以环境变量注入**，AI 不把 token 硬编码进任何文件、
+不写进 CLAUDE.md、不提交进 git。用户在对话里贴出 token 后，AI 完成部署并提醒其轮换。
+
 认证二选一：`export CLOUDFLARE_API_TOKEN="<token>"`（非交互环境必须）或 `wrangler login`。
 Token 由用户提供，**不要硬编码进任何会被提交的文件**。
-
-> 2026-10-12 起：**部署由用户自行处理，AI 不再碰部署**（不排查凭据、不提 token、不主动 deploy）。
-> 下面的部署说明仅作为环境信息保留给用户本人参考。
 
 ```bash
 cd "d:\CCDevelop\Workout"
@@ -76,6 +77,18 @@ wrangler pages deploy dist --project-name workout-app --branch master
 ```bash
 cd "d:\CCDevelop\Workout" && export CLOUDFLARE_API_TOKEN="<token>" && npm run build && wrangler pages deploy dist --project-name workout-app --branch master
 ```
+
+### AI 部署检查清单（每次部署照做）
+
+1. 先 `npm run build`，确认 `tsc -b` 与 `vite build` 都通过。
+2. 不设 `WORKOUT_BASE`（CF Pages 走根路径，base 保持默认 `/`）。
+3. 确认 `dist/` 顶层**没有** `404.html`（有它会破坏 CF Pages 的 SPA 回退）。
+4. `wrangler pages deploy` 出现 `Deployment complete` 后记下 preview URL；
+   若提示 `timed out`，**直接重试部署命令，不用重新构建**。
+5. curl 验证生产地址返回 200，且首页引用的 `index-<hash>.js` 与本次构建产物一致：
+   `curl -s -o /dev/null -w "%{http_code}\n" https://workout-app-681.pages.dev/`
+   `curl -s https://workout-app-681.pages.dev/ | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1`
+6. 完成后**提醒用户轮换**在对话中暴露过的 token。
 
 ### 关键注意事项
 

@@ -8,6 +8,7 @@ import Header from '../components/Header'
 import { bodyPartMeta } from '../lib/bodyParts'
 import { normalizeSession } from '../lib/session'
 import { localNoonOf, toLocalDateKey } from '../lib/date'
+import { sessionVolume } from '../lib/set'
 
 type TimeRange = '1w' | '1m' | '3m'
 
@@ -51,15 +52,10 @@ const buildBuckets = (range: TimeRange, now: Date): Bucket[] => {
   })
 }
 
-// 训练容量 = Σ(重量 × 次数)。只算「已完成且填了重量」的组：
-// 自重动作没有重量，计入会把容量拉低成噪声。
-const sessionVolume = (s: WorkoutSession) =>
-  s.exercises.reduce(
-    (sum, ex) =>
-      sum +
-      ex.sets.reduce((v, st) => v + (st.completed ? (st.weight ?? 0) * (st.reps ?? 0) : 0), 0),
-    0
-  )
+// 训练容量 = Σ(重量 × 次数)，只算「已完成、非热身、且填了重量」的组。
+// 排除热身：不排除的话，每次开头的空杆热身会把总量算得偏乐观，
+// 而且自重动作没有重量，计入只会把容量拉低成噪声。
+const sessionVolumeOf = (s: WorkoutSession) => sessionVolume(s.exercises)
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -350,7 +346,7 @@ export default function Stats() {
     const data = buckets.map((b) => ({ day: b.label, volume: 0 }))
 
     for (const s of strengthSessions) {
-      const vol = sessionVolume(s)
+      const vol = sessionVolumeOf(s)
       if (vol <= 0) continue
       const t = new Date(s.date).getTime()
       const i = buckets.findIndex((b) => t >= b.start && t < b.end)
@@ -535,7 +531,7 @@ export default function Stats() {
               </BarChart>
             </ResponsiveContainer>
             <p className="text-muted text-[10px] mt-2 leading-relaxed">
-              重量 × 次数，只统计已完成且填写了重量的组；自重动作不计入。
+              重量 × 次数，只统计已完成、非热身且填写了重量的组；自重动作不计入。
             </p>
           </div>
         )}

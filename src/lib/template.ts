@@ -1,4 +1,5 @@
 import type { TemplateItem, WorkoutTemplate } from '../types'
+import { clampRestSeconds } from './rest'
 
 // 组数 / 次数的合法区间。
 
@@ -40,13 +41,17 @@ export function stepItemCount(field: CountField, value: number, delta: number): 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
-/** 把整条动作的 sets / reps 都夹一遍。用于消费外部来源的数据。 */
+/** 把整条动作的 sets / reps / 组间歇都夹一遍。用于消费外部来源的数据。 */
 export function sanitizeItem(item: TemplateItem): TemplateItem {
   const sets = clampItemCount('defaultSets', item.defaultSets)
   const reps = clampItemCount('defaultReps', item.defaultReps)
+  // 组间歇只在「填了」的时候夹。undefined 表示「回落到动作库的值」，
+  // 不能在这里写成默认值——那会让用户永远看不到「跟随动作库」这个语义。
+  const rest =
+    item.restSeconds === undefined ? undefined : clampRestSeconds(item.restSeconds)
   // 没改动就返回原对象，让上层能靠引用判断「这条不需要重建」
-  if (sets === item.defaultSets && reps === item.defaultReps) return item
-  return { ...item, defaultSets: sets, defaultReps: reps }
+  if (sets === item.defaultSets && reps === item.defaultReps && rest === item.restSeconds) return item
+  return { ...item, defaultSets: sets, defaultReps: reps, restSeconds: rest }
 }
 
 /**

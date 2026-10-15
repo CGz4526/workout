@@ -1,6 +1,7 @@
 // 训练记录的写入门槛。
 
 import type { ExerciseRecord, SetRecord, WorkoutSession } from '../types'
+import { clampRpe } from './set'
 
 // 少于 1 分钟的训练视为误触或试手，不写入记录。
 export const MIN_SESSION_SECONDS = 60
@@ -38,8 +39,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
  * 所以兜底放在**读取边界**上，而不是逐个消费点写 `?? []`：新增读取字段时不会再漏。
  * 只夹写入侧是不够的——库里已有的坏数据照样能炸。
  *
- * 处理三件事：缺 `exercises` → `[]`；`exercises` 里的非对象元素丢掉；
- * `sets` 缺 → `[]`、里面的非对象元素丢掉。
+ * 处理四件事：缺 `exercises` → `[]`；`exercises` 里的非对象元素丢掉；
+ * `sets` 缺 → `[]`、里面的非对象元素丢掉；`rpe` / `warmup` 越界值夹回来。
  * 没有实际改动时返回**原对象**，避免下游 useMemo / useLiveQuery 白重渲染。
  */
 export function normalizeSession(s: WorkoutSession): WorkoutSession {
@@ -51,9 +52,20 @@ export function normalizeSession(s: WorkoutSession): WorkoutSession {
   const fixed = exercises.map((ex) => {
     const rawSets: unknown[] = Array.isArray(ex.sets) ? ex.sets : []
     const sets = (rawSets.every(isRecord) ? rawSets : rawSets.filter(isRecord)) as unknown as SetRecord[]
-    if (sets === ex.sets) return ex
+
+    // rpe / warmup 是新增字段：旧记录和手改过的备份里可能是任意值。
+    // 只在真的越界时才换对象——绝大多数记录走的是下面这个 untouched 分支，
+    // 保持引用不变，下游的 useMemo 缓存才不会失效。
+    let setsChanged = sets !== ex.sets
+    const cleanedSets = sets.map((st) => {
+      const fixedRpe = clampRpe(st.rpe)
+      if (fixedRpe === st.rpe && (st.warmup === undefined || typeof st.warmup === 'boolean')) return st
+      setsChanged = true
+      return { ...st, rpe: fixedRpe }
+    })
+    if (!setsChanged) return ex
     changed = true
-    return { ...ex, sets }
+    return { ...ex, sets: cleanedSets }
   })
 
   return changed ? { ...s, exercises: fixed } : s

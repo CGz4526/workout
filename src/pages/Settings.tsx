@@ -36,7 +36,7 @@ export default function Settings() {
       db.weights.toArray(),
     ])
     return {
-      version: 2,
+      version: 3,
       exportDate: new Date().toISOString(),
       counts: {
         exercises: exercises.length,
@@ -76,7 +76,7 @@ export default function Settings() {
       const validTemplates =
         data.templates === undefined || Array.isArray(data.templates)
       const validSessions = Array.isArray(data.sessions)
-      // weights 是可选的：version 1 的旧备份没有这个字段，导入时保留现有体重记录
+      // weights 是可选的：version 1/2 的旧备份没有这个字段，导入时保留现有体重记录
       const validWeights = data.weights === undefined || Array.isArray(data.weights)
 
       if (!data.version || !validExercises || !validTemplates || !validSessions || !validWeights) {
@@ -105,7 +105,10 @@ export default function Settings() {
           await db.templates.bulkAdd(data.templates)
         }
         if (data.sessions.length > 0) await db.sessions.bulkAdd(data.sessions)
-        // 旧备份（version 1）没有 weights：不动它，别把用户按天记的体重清掉
+        // 旧备份（version 1/2）没有 weights：不动它，别把用户按天记的体重清掉。
+        // restSeconds / rpe / warmup / notes 是 version 3 才有的字段，旧备份里
+        // 根本没有——缺字段的模板条目走 sanitizeItem 回落，缺 rpe 的组走
+        // normalizeSession 回落，不需要在这里特判。
         if (Array.isArray(data.weights)) {
           await db.weights.clear()
           if (data.weights.length > 0) await db.weights.bulkAdd(data.weights)

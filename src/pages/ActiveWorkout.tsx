@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Plus, Minus, Timer, Trophy, Clock, Dumbbell, ListChecks, Zap, Route, X, Check } from 'lucide-react'
 import { db } from '../db'
-import { BODY_PARTS, type BodyPart, type ExerciseRecord, type SetRecord, type TemplateItem } from '../types'
+import { BODY_PARTS, MAX_RPE, MIN_RPE, type BodyPart, type ExerciseRecord, type SetRecord, type TemplateItem } from '../types'
 import Header from '../components/Header'
 import CheckButton from '../components/CheckButton'
 import { alertRestDone, notificationPermission, primeAudio, requestNotificationPermission } from '../lib/feedback'
@@ -11,8 +11,11 @@ import { useWakeLock } from '../lib/useWakeLock'
 import { isTooShortToRecord, normalizeSession } from '../lib/session'
 import { sanitizeItem, normalizeTemplate } from '../lib/template'
 import { bodyPartMeta } from '../lib/bodyParts'
+import { resolveRestSeconds } from '../lib/rest'
+import { clampRpe, isCountedSet } from '../lib/set'
 
-const REST_SECONDS = 150
+const REST_FALLBACK = 150
+const MAX_NOTES_LENGTH = 500
 
 // "上次成绩" 的日期前缀：只到「天」这一粒度就够了，精确到时分反而难读。
 function daysAgoLabel(dateStr: string) {
@@ -90,6 +93,9 @@ export default function ActiveWorkout() {
   const timerRef = useRef<number | null>(null)
 
   const [restEndTime, setRestEndTime] = useState<number | null>(null)
+  // 当前这次休息的总时长（秒），用于倒计时圆环的比例。
+  // 不同动作的组间歇不同，所以不能用一个模块级常量——必须记下这次用了多久。
+  const [restDuration, setRestDuration] = useState(REST_FALLBACK)
   const [distance, setDistance] = useState<string>('')
   // 有氧结束后允许修正时长。存的是「分钟」字符串，和 SessionDetail 的编辑口径一致；
   // 落库时再换算成秒。
@@ -101,11 +107,19 @@ export default function ActiveWorkout() {
   // （interval 可能在下一次重渲染清空 state 之前再跳一次）。
   const restAlertedRef = useRef<number | null>(null)
   const notifAskedRef = useRef(false)
+  // 训练备注。和 exercises 一样用防抖落库——用户每敲一个字都写一次库没意义。
+  const [notesInput, setNotesInput] = useState('')
+  const [notesSaved, setNotesSaved] = useState(false)
+  const notesTimerRef = useRef<number | null>(null)
   const [notifState, setNotifState] = useState<NotificationPermission | 'unsupported'>(
     () => notificationPermission()
   )
   // 动作 → 最近一次已结束训练的成绩，用于训练时显示「上次」
   const [lastPerf, setLastPerf] = useState<Record<string, { sets: SetRecord[]; date: string }>>({})
+  // 本次训练所用模板的条目，用来解析每个动作的组间歇（模板值 > 动作库值 > 默认）
+  const [templateItems, setTemplateItems] = useState<TemplateItem[]>([])
+  // 数字滚轮选择器：点重量/次数/RPE 弹出（滑动优先，键盘次之）
+  const [wheel, setWheel] = useState<{ exIdx: number; setIdx: number; field: 'weight' | 'reps' | 'rpe' } | null>(null)
 
   // Calculate elapsed from startTime
   const elapsed = finished
@@ -146,6 +160,7 @@ export default function ActiveWorkout() {
     if (session.finished) {
       setExercises(session.exercises)
       setFinalElapsed(session.duration)
+      setNotesInput(session.notes ?? '')
       // 有氧的时长/距离在总结页是可编辑的，所以要把库里已有的值回填进输入框。
       // 之前只回填了 exercises，重开一条已结束的有氧记录时距离框是空的——
       // 明明存了 5km 却显示空白。
@@ -196,7 +211,23 @@ export default function ActiveWorkout() {
     if (session.restEndTime && session.restEndTime > Date.now()) {
       setRestEndTime(session.restEndTime)
     }
+    // 备注在两条分支里都要回填：恢复一条已结束的记录，以及从中途继续的训练
+    setNotesInput(session.notes ?? '')
   }, [session, sessionId])
+
+  // 模板条目单独取一次：组间歇的解析要用它（模板值优先于动作库值）。
+  // 用不到模板也能训练——那种情况回落回动作库值，再回落回默认两分半。
+  useEffect(() => {
+    if (!session?.templateId) return
+    let cancelled = false
+    db.templates.get(session.templateId).then((raw) => {
+      if (cancelled) return
+      setTemplateItems(raw ? normalizeTemplate(raw).items : [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.templateId])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Display tick: re-render every second so elapsed updates
@@ -262,7 +293,9 @@ export default function ActiveWorkout() {
           .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
           .forEach((s) => {
             for (const ex of s.exercises) {
-              const done = ex.sets.filter((st) => st.completed)
+              // 排除热身组：把空杆热身算进「上次成绩」会让参考值失真，
+              // 用户看到的是 20kg×15，而正式组其实是 60kg×8。
+              const done = ex.sets.filter(isCountedSet)
               if (done.length === 0) continue
               // 从新到旧遍历，第一次命中即为最近一次。
               // 同时按 id 和名称建索引：训练中新增的自定义动作可能带新 id。
@@ -288,13 +321,36 @@ export default function ActiveWorkout() {
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
+  // 某个动作这次训练该歇多久。入参是敌意数据（模板/动作库都可能来自备份导入），
+  // resolveRestSeconds 内部会夹取。
+  const restFor = (exIdx: number): number => {
+    const ex = exercises[exIdx]
+    if (!ex) return REST_FALLBACK
+    const item = templateItems.find((i) => i.exerciseId === ex.exerciseId)
+    const def = allExercises.find((e) => e.id === ex.exerciseId)
+    return resolveRestSeconds(item, def)
+  }
+
+  // 备注防抖落库。和 saveExercises 同一套思路：flush 在 finishWorkout 里做，
+  // 否则刚敲完字就结束训练，那一段还没写进去就丢了。
+  const saveNotes = useCallback((text: string) => {
+    if (!sessionId) return
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
+    notesTimerRef.current = window.setTimeout(() => {
+      const trimmed = text.trim()
+      db.sessions.update(sessionId, { notes: trimmed || undefined })
+      setNotesSaved(true)
+      window.setTimeout(() => setNotesSaved(false), 1500)
+    }, 400)
+  }, [sessionId])
+
   const formatRestTime = (seconds: number) => {
     const m = Math.floor(seconds / 60)
     const s = seconds % 60
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  const startRest = () => {
+  const startRest = (seconds: number) => {
     // 这里是从点击事件同步调用的，而 iOS 只允许在用户手势里解锁音频，
     // 所以必须在这一刻 prime，否则休息结束的提示音会一直是哑的。
     primeAudio()
@@ -305,7 +361,11 @@ export default function ActiveWorkout() {
       requestNotificationPermission().then(setNotifState)
     }
     restAlertedRef.current = null
-    setRestEndTime(Date.now() + REST_SECONDS * 1000)
+    setRestDuration(seconds)
+    // 用每秒推进的 now 而不是 Date.now()：后者会让 react-hooks/purity
+    // 把这个函数判成「可能在渲染期调用」，报 impure function。
+    // 最多差 1 秒，对休息倒计时无影响。
+    setRestEndTime(now + seconds * 1000)
   }
 
   const skipRest = () => {
@@ -327,15 +387,29 @@ export default function ActiveWorkout() {
           : ex
       )
     )
-    if (!wasCompleted) startRest()
+    // 热身组不触发休息——它本来就不该按正式组的节奏走。
+    if (!wasCompleted && !exercises[exIdx].sets[setIdx].warmup) startRest(restFor(exIdx))
   }
 
-  const updateSet = (exIdx: number, setIdx: number, field: 'weight' | 'reps', value: number | undefined) => {
+  const updateSet = (exIdx: number, setIdx: number, field: 'weight' | 'reps' | 'rpe', value: number | undefined) => {
     if (finished) return
     setExercises(
       exercises.map((ex, i) =>
         i === exIdx
           ? { ...ex, sets: ex.sets.map((s, j) => j === setIdx ? { ...s, [field]: value } : s) }
+          : ex
+      )
+    )
+  }
+
+  // 热身标记。热身组不计入容量与有效组数，但重量/次数照记——
+  // 回看时能看出当天开了多少组空杆热身。
+  const toggleWarmup = (exIdx: number, setIdx: number) => {
+    if (finished) return
+    setExercises(
+      exercises.map((ex, i) =>
+        i === exIdx
+          ? { ...ex, sets: ex.sets.map((s, j) => j === setIdx ? { ...s, warmup: !s.warmup } : s) }
           : ex
       )
     )
@@ -408,9 +482,10 @@ export default function ActiveWorkout() {
     if (restTimerRef.current) clearInterval(restTimerRef.current)
     // 丢掉还没落库的防抖写入，免得它在记录被删掉之后又 update 一次
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
 
     const duration = session?.startTime
-      ? Math.floor((Date.now() - session.startTime) / 1000)
+      ? Math.floor((now - session.startTime) / 1000)
       : 0
 
     // 不足 1 分钟的训练直接丢弃，不留空记录。
@@ -425,11 +500,15 @@ export default function ActiveWorkout() {
     setFinalElapsed(duration)
     setDurationInput(secondsToMinutesInput(duration))
     await db.sessions.update(sessionId, {
-      exercises,
+      // 每个动作存一份训练时生效的组间歇快照：模板/动作库之后可能被改，
+      // 历史详情页要还原的是「当时歇了多久」
+      exercises: exercises.map((ex, i) => ({ ...ex, restSeconds: restFor(i) })),
       duration,
       finished: true,
       restEndTime: undefined,
       distance: distance ? Number(distance) : undefined,
+      // 备注和 exercises 一起 flush：刚敲完字就结束训练时，防抖还没跑完
+      notes: notesInput.trim() || undefined,
     })
     setFinished(true)
     setShowSummary(true)
@@ -497,7 +576,10 @@ export default function ActiveWorkout() {
 
   const totalSets = exercises.reduce((sum, ex) => sum + ex.sets.length, 0)
   const completedSets = exercises.reduce((sum, ex) => sum + ex.sets.filter((s) => s.completed).length, 0)
-  const completedExercises = exercises.filter((ex) => ex.sets.some((s) => s.completed))
+  // 有效组 = 已完成且非热身。进度条仍用 completedSets（它衡量「有没有都勾完」），
+  // 但总结页对外展示的数字必须排除热身，否则热身会把成绩算得偏乐观。
+  const workingSets = exercises.reduce((sum, ex) => sum + ex.sets.filter(isCountedSet).length, 0)
+  const completedExercises = exercises.filter((ex) => ex.sets.some(isCountedSet))
   const progress = totalSets > 0 ? (completedSets / totalSets) * 100 : 0
 
   if (showSummary) {
@@ -571,7 +653,7 @@ export default function ActiveWorkout() {
                   <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-2.5">
                     <ListChecks size={18} className="text-accent-light" />
                   </div>
-                  <p className="text-primary text-lg font-bold">{completedSets}</p>
+                  <p className="text-primary text-lg font-bold">{workingSets}</p>
                   <p className="text-muted text-[10px] mt-0.5 uppercase tracking-wider">组数</p>
                 </div>
               </>
@@ -580,8 +662,9 @@ export default function ActiveWorkout() {
 
           {!isAerobic && (
             <div className="w-full space-y-3 mb-8 animate-rise-in" style={{ animationDelay: '0.2s' }}>
-              {exercises.filter(ex => ex.sets.some(s => s.completed)).map((ex, idx) => {
-                const doneSets = ex.sets.filter(s => s.completed)
+              {exercises.filter(ex => ex.sets.some(isCountedSet)).map((ex, idx) => {
+                const doneSets = ex.sets.filter(isCountedSet)
+                const warmupCount = ex.sets.filter((s) => s.warmup === true).length
                 return (
                   <div key={idx} className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
                     <div className="flex items-center justify-between mb-3">
@@ -591,12 +674,18 @@ export default function ActiveWorkout() {
                         </div>
                         <span className="text-primary font-semibold text-sm">{ex.exerciseName}</span>
                       </div>
-                      <span className="text-accent-light text-xs font-mono font-bold">{doneSets.length} 组</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {warmupCount > 0 && (
+                          <span className="text-amber-600 dark:text-amber-400 text-[10px] font-mono">热身 {warmupCount}</span>
+                        )}
+                        <span className="text-accent-light text-xs font-mono font-bold">{doneSets.length} 组</span>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5 ml-9">
                       {doneSets.map((s, i) => (
                         <span key={i} className="text-[11px] bg-surface-2 text-primary px-2.5 py-1 rounded-lg font-mono border border-border">
                           {s.weight ? `${s.weight}kg` : '-'} × {s.reps ?? '-'}
+                          {s.rpe != null && <span className="text-muted ml-1">@{s.rpe}</span>}
                         </span>
                       ))}
                     </div>
@@ -713,42 +802,63 @@ export default function ActiveWorkout() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-[1.75rem_1fr_1fr_auto] gap-1 items-center text-[10px] text-muted mb-1.5 px-0.5 uppercase tracking-wider">
+                <div className="grid grid-cols-[1.9rem_1fr_1fr_2.6rem_auto] gap-1 items-center text-[10px] text-muted mb-1.5 px-0.5 uppercase tracking-wider">
                   <span>组</span>
                   <span>重量</span>
                   <span>次数</span>
+                  <span className="text-center">RPE</span>
                   <span />
                 </div>
 
                 {ex.sets.map((set, setIdx) => (
                   <div
                     key={setIdx}
-                    className={`grid grid-cols-[1.75rem_1fr_1fr_auto] gap-1 items-center py-2 px-0.5 rounded-xl transition-colors duration-200 ${
-                      set.completed ? 'bg-accent/[0.06]' : ''
+                    className={`grid grid-cols-[1.9rem_1fr_1fr_2.6rem_auto] gap-1 items-center py-2 px-0.5 rounded-xl transition-colors duration-200 ${
+                      set.warmup ? 'bg-amber-500/[0.05]' : set.completed ? 'bg-accent/[0.06]' : ''
                     }`}
                   >
-                    <span className={`text-xs font-mono ${set.completed ? 'text-accent-light font-bold' : 'text-muted'}`}>
-                      {setIdx + 1}
-                    </span>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={set.weight ?? ''}
-                        onChange={(e) => updateSet(exIdx, setIdx, 'weight', e.target.value ? Number(e.target.value) : undefined)}
-                        placeholder="-"
-                        disabled={finished}
-                        className="bg-surface-2 text-primary text-center py-2 pr-7 rounded-lg text-sm outline-none border border-border focus:border-accent/40 transition-colors disabled:opacity-40 font-mono placeholder:text-muted min-w-0 w-full"
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted text-xs pointer-events-none">kg</span>
-                    </div>
-                    <input
-                      type="number"
-                      value={set.reps ?? ''}
-                      onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value ? Number(e.target.value) : undefined)}
-                      placeholder="-"
+                    <button
+                      type="button"
+                      onClick={() => toggleWarmup(exIdx, setIdx)}
                       disabled={finished}
-                      className="bg-surface-2 text-primary text-center py-2 rounded-lg text-sm outline-none border border-border focus:border-accent/40 transition-colors disabled:opacity-40 font-mono placeholder:text-muted min-w-0"
-                    />
+                      aria-pressed={set.warmup === true}
+                      aria-label={set.warmup ? `取消第 ${setIdx + 1} 组的热身标记` : `把第 ${setIdx + 1} 组标为热身`}
+                      className={`h-7 w-full rounded-md flex items-center justify-center text-[10px] font-mono transition-colors tap disabled:opacity-40 ${
+                        set.warmup
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold'
+                          : set.completed ? 'text-accent-light font-bold' : 'text-muted'
+                      }`}
+                    >
+                      {set.warmup ? '热' : setIdx + 1}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWheel({ exIdx, setIdx, field: 'weight' })}
+                      disabled={finished}
+                      aria-label={`第 ${setIdx + 1} 组重量`}
+                      className="relative bg-surface-2 text-primary text-center py-2 pr-6 rounded-lg text-sm border border-border transition-colors disabled:opacity-40 font-mono tap min-w-0 w-full"
+                    >
+                      {set.weight ?? <span className="text-muted">-</span>}
+                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted text-[10px] pointer-events-none">kg</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWheel({ exIdx, setIdx, field: 'reps' })}
+                      disabled={finished}
+                      aria-label={`第 ${setIdx + 1} 组次数`}
+                      className="bg-surface-2 text-primary text-center py-2 rounded-lg text-sm border border-border transition-colors disabled:opacity-40 font-mono tap min-w-0"
+                    >
+                      {set.reps ?? <span className="text-muted">-</span>}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWheel({ exIdx, setIdx, field: 'rpe' })}
+                      disabled={finished}
+                      aria-label={`第 ${setIdx + 1} 组 RPE`}
+                      className="bg-surface-2 text-primary text-center py-2 rounded-lg text-xs border border-border transition-colors disabled:opacity-40 font-mono tap min-w-0"
+                    >
+                      {set.rpe ?? <span className="text-muted text-[10px]">RPE</span>}
+                    </button>
                     <div className="flex justify-center">
                       <CheckButton checked={set.completed} onClick={() => toggleSet(exIdx, setIdx)} />
                     </div>
@@ -774,6 +884,22 @@ export default function ActiveWorkout() {
               + 添加动作
             </button>
           )}
+
+          {/* 训练备注。当场记下「今天肩不舒服」「换了器械」，
+              回看重量下滑时能对上原因——事后想不起来是常事。 */}
+          <div className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card">
+            <h3 className="text-primary font-semibold text-sm mb-2.5">训练备注</h3>
+            <textarea
+              value={notesInput}
+              onChange={(e) => setNotesInput(e.target.value.slice(0, MAX_NOTES_LENGTH))}
+              onBlur={() => saveNotes(notesInput)}
+              placeholder="今天的状态、不适、器械调整…"
+              rows={2}
+              disabled={finished}
+              className="w-full bg-surface-2 text-primary px-4 py-2.5 rounded-xl text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-muted resize-none disabled:opacity-40"
+            />
+            {notesSaved && <p className="text-accent text-[10px] mt-1.5">已保存</p>}
+          </div>
         </div>
       )}
 
@@ -790,7 +916,7 @@ export default function ActiveWorkout() {
                 strokeWidth="5"
                 strokeLinecap="round"
                 strokeDasharray={`${2 * Math.PI * 43}`}
-                strokeDashoffset={`${2 * Math.PI * 43 * (1 - restRemaining / REST_SECONDS)}`}
+                strokeDashoffset={`${2 * Math.PI * 43 * (1 - restRemaining / restDuration)}`}
                 className="transition-all duration-1000 ease-linear"
               />
               <defs>

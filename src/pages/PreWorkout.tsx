@@ -7,6 +7,7 @@ import { BODY_PARTS, DEFAULT_REPS, DEFAULT_SETS, type BodyPart, type ExerciseRec
 import Header from '../components/Header'
 import { type CountField, stepItemCount } from '../lib/template'
 import { bodyPartMeta } from '../lib/bodyParts'
+import { formatRest, resolveRestSeconds, stepRestSeconds } from '../lib/rest'
 
 export default function PreWorkout() {
   const navigate = useNavigate()
@@ -47,6 +48,23 @@ export default function PreWorkout() {
       items.map((item, i) =>
         i === idx
           ? { ...item, [field]: stepItemCount(field, item[field], delta) }
+          : item
+      )
+    )
+  }
+
+  // 同 Templates.tsx：不填则回落到动作库的值，首次步进要把回落值写实。
+  const updateRest = (idx: number, delta: number) => {
+    setItems(
+      items.map((item, i) =>
+        i === idx
+          ? {
+              ...item,
+              restSeconds: stepRestSeconds(
+                resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId)),
+                delta,
+              ),
+            }
           : item
       )
     )
@@ -98,23 +116,33 @@ export default function PreWorkout() {
               return (
                 <div
                   key={item.exerciseId}
-                  className="flex items-center gap-3 bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-pop-in"
+                  className="bg-surface-1 rounded-2xl p-4 border border-border shadow-card animate-pop-in"
                   style={{ animationDelay: `${Math.min(idx, 8) * 0.04}s` }}
                 >
-                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${m.soft}`}>
-                    <ItemIcon size={14} className={m.text} />
-                  </span>
-                  <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
-                  <div className="flex items-center gap-1 bg-surface-2 rounded-lg px-1 py-0.5 shrink-0">
-                    <button onClick={() => updateItem(idx, 'defaultSets', -1)} aria-label="减少组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={14} /></button>
-                    <span className="text-primary text-xs w-5 text-center font-mono">{item.defaultSets}</span>
-                    <button onClick={() => updateItem(idx, 'defaultSets', 1)} aria-label="增加组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={14} /></button>
-                    <span className="text-muted text-xs px-0.5">×</span>
-                    <button onClick={() => updateItem(idx, 'defaultReps', -1)} aria-label="减少次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={14} /></button>
-                    <span className="text-primary text-xs w-6 text-center font-mono">{item.defaultReps}</span>
-                    <button onClick={() => updateItem(idx, 'defaultReps', 1)} aria-label="增加次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={14} /></button>
+                  <div className="flex items-center gap-3">
+                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${m.soft}`}>
+                      <ItemIcon size={14} className={m.text} />
+                    </span>
+                    <span className="flex-1 min-w-0 text-primary text-sm font-medium truncate">{item.exerciseName}</span>
+                    <div className="flex items-center gap-1 bg-surface-2 rounded-lg px-1 py-0.5 shrink-0">
+                      <button onClick={() => updateItem(idx, 'defaultSets', -1)} aria-label="减少组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={14} /></button>
+                      <span className="text-primary text-xs w-5 text-center font-mono">{item.defaultSets}</span>
+                      <button onClick={() => updateItem(idx, 'defaultSets', 1)} aria-label="增加组数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={14} /></button>
+                      <span className="text-muted text-xs px-0.5">×</span>
+                      <button onClick={() => updateItem(idx, 'defaultReps', -1)} aria-label="减少次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><Minus size={14} /></button>
+                      <span className="text-primary text-xs w-6 text-center font-mono">{item.defaultReps}</span>
+                      <button onClick={() => updateItem(idx, 'defaultReps', 1)} aria-label="增加次数" className="p-1 rounded-md text-secondary active:bg-surface-3 tap"><PlusIcon size={14} /></button>
+                    </div>
+                    <button onClick={() => removeItem(idx)} aria-label={`删除 ${item.exerciseName}`} className="p-2 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 tap"><Trash2 size={15} /></button>
                   </div>
-                  <button onClick={() => removeItem(idx)} aria-label={`删除 ${item.exerciseName}`} className="p-2 rounded-lg text-muted active:text-red-400 active:bg-red-500/10 tap"><Trash2 size={15} /></button>
+                  <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-border/60">
+                    <span className="text-[10px] text-muted">组间歇</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateRest(idx, -15)} aria-label="减少组间歇" className="p-1 rounded-md text-muted active:bg-surface-3 tap"><Minus size={11} /></button>
+                      <span className="text-secondary text-[10px] w-14 text-center font-mono">{formatRest(resolveRestSeconds(item, allExercises.find((e) => e.id === item.exerciseId)))}</span>
+                      <button onClick={() => updateRest(idx, 15)} aria-label="增加组间歇" className="p-1 rounded-md text-muted active:bg-surface-3 tap"><PlusIcon size={11} /></button>
+                    </div>
+                  </div>
                 </div>
               )
             })}

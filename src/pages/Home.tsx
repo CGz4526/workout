@@ -9,6 +9,7 @@ import { toLocalDateKey } from '../lib/date'
 import { setDayWeight } from '../lib/weight'
 import { normalizeSession } from '../lib/session'
 import { normalizeTemplate } from '../lib/template'
+import { countedSets } from '../lib/set'
 import Header from '../components/Header'
 
 // 有氧入口。带 `choices` 的卡片点开后会先问「具体是哪一项」——
@@ -291,9 +292,8 @@ export default function Home() {
             </div>
             <div className="grid gap-2.5">
               {recentSessions.slice(0, 5).map((s, idx) => {
-                const completedSets = s.exercises.reduce(
-                  (sum, ex) => sum + ex.sets.filter((st) => st.completed).length, 0
-                )
+                // 排除热身组，否则首页显示的组数会比详情页和统计页都大
+                const completedSets = countedSets(s.exercises)
                 // 有氧用蓝色、力量用主色、休息日中性色，和首页上方的入口配色保持一致
                 const isAerobic = s.aerobic === true
                 // 休息日：没跑计时器（无 startTime）、没有动作。自动补的休息日也走这里

@@ -3,6 +3,9 @@ export interface Exercise {
   name: string
   bodyPart: string
   description?: string
+  // 该动作的默认组间歇（秒）。不填则用 DEFAULT_REST_SECONDS。
+  // 复合动作通常要 3 分钟，孤立动作 90 秒就够了，一个全局值照顾不到。
+  restSeconds?: number
   createdAt?: number
 }
 
@@ -11,6 +14,8 @@ export interface TemplateItem {
   exerciseName: string
   defaultSets: number
   defaultReps: number
+  // 模板级覆盖，优先于动作库的 restSeconds。不填则回落到动作库值。
+  restSeconds?: number
 }
 
 export interface WorkoutTemplate {
@@ -23,6 +28,11 @@ export interface SetRecord {
   weight?: number
   reps?: number
   completed: boolean
+  // 主观用力程度，6–10（RPE 量表），0.5 步进，可空。
+  // 同一重量在不同日期的 RPE 不同，反映的是当天状态——纯重量数字看不出来。
+  rpe?: number
+  // 热身组。不计入容量与「有效组数」统计，否则热身会把总量算得偏乐观。
+  warmup?: boolean
 }
 
 // 每日体重。一天一条，key 是本地日期 'YYYY-MM-DD'（不是 UTC ISO）——
@@ -38,6 +48,9 @@ export interface ExerciseRecord {
   exerciseId: string
   exerciseName: string
   sets: SetRecord[]
+  // 训练时实际生效的组间歇快照（模板 > 动作库 > 默认）。历史详情页要还原当时的配置，
+  // 而模板之后可能被改掉、动作库也可能改默认——所以结束训练时存一份。
+  restSeconds?: number
 }
 
 export interface WorkoutSession {
@@ -55,6 +68,8 @@ export interface WorkoutSession {
   aerobic?: boolean // true for aerobic exercises (running, swimming)
   distance?: number // distance in km for aerobic exercises
   diet?: 'low' | 'mid' | 'high' | 'cheat' // carbon cycling diet
+  // 训练备注。当天肩膀不舒服、换了器械、状态差——回看重量下滑时能对上原因。
+  notes?: string
 }
 
 export const BODY_PARTS = ['肩', '胸', '背', '腿', '二头', '三头', '核心'] as const
@@ -64,3 +79,13 @@ export type BodyPart = (typeof BODY_PARTS)[number]
 // 1 组是为了让模板尽量精简——真正练几组在 PreWorkout 页按当次状态调。
 export const DEFAULT_SETS = 1
 export const DEFAULT_REPS = 12
+
+// 组间歇。默认两分半——这是大多数复合动作的合理下限。
+// 用户可在动作库（该动作的默认）或模板（当次覆盖）里改，见 lib/rest.ts。
+export const DEFAULT_REST_SECONDS = 150
+export const MIN_REST_SECONDS = 30
+export const MAX_REST_SECONDS = 600
+
+// RPE（主观用力程度）量表。6 起是因为低于 6 基本等于没用力，记了也没信息量。
+export const MIN_RPE = 6
+export const MAX_RPE = 10
